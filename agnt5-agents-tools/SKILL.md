@@ -1,6 +1,6 @@
 ---
 name: agnt5-agents-tools
-description: Configure AGNT5 agents and the tools they call - custom @tool functions, built-in provider tools (web search, code interpreter), MCP client/server integration, sandboxed code execution, and multi-agent patterns (handoffs, agents-as-tools). Use when creating a new agent, giving an agent a capability, or wiring an external MCP server into an agent.
+description: Configure AGNT5 agents and the tools they call - Agent(...) options, custom @tool functions, built-in provider tools (web search, code interpreter, web fetch) and agnt5.tools web_fetch/web_search, MCP client/server integration, sandboxed code execution, before/after agent-model-tool callbacks (guardrails), agent memory (ctx.memory, ctx.conversation), prompt caching, and multi-agent patterns (handoffs, agents-as-tools). Use when creating an agent, giving it a tool or capability, adding a guardrail callback, wiring an MCP server, or routing between agents.
 ---
 
 # AGNT5 Agents and Tools
@@ -23,17 +23,18 @@ agent = Agent(
 | Parameter | Required | Description |
 |---|---|---|
 | `name` | yes | Identifier for this agent |
-| `model` | yes | `"provider/model-name"`, e.g. `"openai/gpt-4o"`, `"anthropic/claude-3-5-sonnet-20241022"` |
+| `model` | yes | `"provider/model-name"`, e.g. `"openai/gpt-4o"`, `"anthropic/claude-sonnet-5"` |
 | `instructions` | yes | System prompt |
 | `tools` | no | Custom tools or other `Agent`s (auto-wrapped as agents-as-tools) |
 | `built_in_tools` | no | `list[BuiltInTool]` — provider-hosted tools |
 | `handoffs` | no | Agents to delegate full control to |
 | `sandbox` | no | `Sandbox()` for isolated file/code execution |
 | `max_iterations` | no | Max reasoning loops, default `10` |
-| `temperature` | no | 0-1, default `0.7` |
-| `max_tokens` | no | Max response tokens |
-| `top_p` | no | Top-p nucleus sampling, 0-1 |
+| `temperature` / `max_tokens` / `top_p` | no | Sampling settings (legacy on `Agent`; default temperature `0.7`) |
 | `model_config` | no | `ModelConfig` for a custom endpoint: `base_url`, `api_key`, `timeout`, `headers` |
+| `cache` | no | `True` or `lm.PromptCache(...)` — provider prompt caching (see `agnt5-prompts`) |
+| `callbacks` / `before_*_callback` / `after_*_callback` | no | Guardrail hooks — see Callbacks below |
+| `skills` / `skills_dir` / `agents_md` | no | On-demand SKILL.md capabilities and AGENTS.md guidance — see `agnt5-agent-skills` |
 
 Run with `result = await agent.run("...")` (full result: `result.output`,
 `result.tool_calls` — e.g. `[{"name": "get_weather", "arguments": '{"city": "Paris"}', "iteration": 1}]`)
@@ -41,12 +42,11 @@ or stream with `async for event in agent.stream("..."):` and check `event.event_
 
 | Event type | When it fires |
 |---|---|
-| `agent.started` | Agent loop begins |
-| `lm.content_block.delta` | A chunk of the LLM response arrives |
-| `lm.content_block.completed` | LLM response block is complete |
-| `tool_call.started` | A tool call begins |
-| `tool_call.completed` | A tool call finishes |
-| `agent.completed` | Agent loop ends, final answer available |
+| `agent.started` / `agent.completed` / `agent.failed` | Agent loop begins / ends with a final answer / errors |
+| `agent.iteration.started` / `agent.iteration.completed` | One reasoning loop |
+| `lm.content_block.started` / `.delta` / `.completed` | LLM response block streaming |
+| `tool_call.started` / `tool_call.completed` / `tool_call.failed` | A tool call |
+| `skill.loaded` | The agent loaded a SKILL.md (see `agnt5-agent-skills`) |
 
 Inside a workflow, pass `context=ctx`: `await agent.run(task, context=ctx)`.
 
@@ -73,9 +73,12 @@ agent = Agent(name="assistant", model="openai/gpt-4o-mini",
 - Every other param becomes a model-fillable field — type hints + docstring `Args:` build the
   JSON schema.
 - Sync functions auto-wrap in a thread pool. Tools register globally at import time.
-- `@tool(name=..., description=..., confirmation=...)` — `name`/`description` override the
-  model-facing name/description (default: function name / first docstring line);
-  `confirmation` (bool, default `False`) is reserved for a future human-approval flow.
+- `@tool(...)` options: `name` / `description` (override the model-facing values; default:
+  function name / first docstring line), `input_schema` (with `auto_schema=False`),
+  `recovery_policy` (what happens if the worker dies mid-call; default
+  `ActivationRecoveryPolicy.UNKNOWN_OUTCOME`, use `IDEMPOTENT_RETRY` for safe-to-repeat tools),
+  `durable` (default `True`). `confirmation=True` is not enforced yet — for approval, use
+  `agnt5-human-in-the-loop`.
 
 ## Built-in tools (no custom code)
 
@@ -93,12 +96,24 @@ agent = Agent(
 
 | Tool | What it does | Provider |
 |---|---|---|
-| `BuiltInTool.WEB_SEARCH` | Live web search with cited results | OpenAI, Anthropic |
+| `BuiltInTool.WEB_SEARCH` | Live web search with cited results | OpenAI, Anthropic, Gemini (grounding) |
 | `BuiltInTool.CODE_INTERPRETER` | Run code in a provider-hosted sandbox | OpenAI only |
 | `BuiltInTool.FILE_SEARCH` | Search files uploaded to the provider | OpenAI only |
 | `BuiltInTool.WEB_FETCH` | Fetch the content of a specific URL | Anthropic only |
 
 `built_in_tools`, `tools`, and `sandbox` can all be set on the same agent at once.
+
+**Provider-agnostic alternatives** (run in your worker, work with any model) — factories that
+return a `Tool` for `tools=[...]`:
+
+```python
+from agnt5.tools import web_fetch, web_search
+
+agent = Agent(..., tools=[web_fetch(max_bytes=200_000), web_search(max_results=5)])
+```
+
+`web_search` uses Brave, Tavily, or SearXNG — set `AGNT5_BRAVE_SEARCH_API_KEY`,
+`AGNT5_TAVILY_API_KEY`, or `AGNT5_SEARXNG_URL` (or `AGNT5_WEB_SEARCH_PROVIDER`).
 
 ## MCP tools
 
@@ -157,55 +172,13 @@ agent = Agent(
 )
 ```
 
-### Sandbox providers — credentials and setup
+`Sandbox(...)` options: `provider=`, `template=`, `env={...}`, `cpu_cores=`, `memory_mib=`,
+`timeout_secs=`, `auto_destroy=True`. `sandbox_tools(sandbox)` returns the same tools for use
+without `sandbox=`; `InMemorySandbox()` is a no-network stand-in for tests.
 
-`Sandbox()` auto-detects the first configured provider; pass `provider=` explicitly when more
-than one is configured.
-
-| Provider | Selector | Required env vars |
-|---|---|---|
-| E2B | `e2b` | `E2B_API_KEY` |
-| Daytona | `daytona` | `DAYTONA_API_KEY` |
-| Vercel Sandbox | `vercel` | `VERCEL_TOKEN` or `VERCEL_OIDC_TOKEN`, plus `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` |
-| Northflank | `northflank` | `NORTHFLANK_API_TOKEN`, `NORTHFLANK_PROJECT_ID` |
-| Together Code Interpreter | `together` | `TOGETHER_API_KEY` |
-
-**Local dev** — put credentials in `.env` and start with the explicit env file:
-
-```bash
-AGNT5_SANDBOX_PROVIDER=e2b
-E2B_API_KEY=e2b_...
-```
-```bash
-agnt5 --env-file .env dev
-```
-
-**Deployed workers** — Studio → Settings → Integrations → add the sandbox provider
-integration, store the credential at the narrowest scope that works, then deploy/restart so
-the worker picks it up. The credential is never shown to the model — only the worker uses it
-to create/manage the sandbox.
-
-**Validate a provider before relying on it** — scaffold the `sandbox-smoke` template and run
-its checks:
-
-```bash
-agnt5 create --template python/sandbox-smoke sandbox-smoke
-cd sandbox-smoke && cp .env.example .env
-agnt5 --env-file .env dev
-
-agnt5 --env-file .env run sandbox_lifecycle_check \
-  --input '{"provider": "e2b", "code": "print(6 * 7)", "language": "python"}'
-agnt5 --env-file .env run sandbox_agent_tools_check --input '{"provider": "e2b"}'
-agnt5 --env-file .env run sandbox_coding_agent_check \
-  --input '{"provider": "e2b", "model": "openai/gpt-4o-mini"}'
-```
-
-| Symptom | Check |
-|---|---|
-| `Sandbox provider 'auto' is not configured` | Worker has no supported provider env vars — restart with `agnt5 --env-file .env dev` or update the deployed worker's environment |
-| Provider creation fails | Provider key is valid and the account has sandbox access enabled |
-| File ops fail but code execution works | Run `sandbox_agent_tools_check` to isolate write/list/read/execute |
-| Shutdown doesn't complete | Provider-side quota, active sandbox limits, provider API status |
+Provider credentials (E2B, Daytona, Vercel, Northflank, Together), local vs deployed setup,
+the `sandbox-smoke` validation template, and troubleshooting:
+[references/sandbox-providers.md](references/sandbox-providers.md).
 
 ## Multi-agent patterns
 
@@ -241,7 +214,8 @@ print(result.handoff_to)   # "billing"
 Pass agents directly (`handoffs=[billing_agent, technical_agent]`) for default-config
 handoffs without `handoff()`. `handoff()` params: `agent` (required), `description`
 (shown to the LLM), `tool_name` (default `transfer_to_{name}`), `pass_full_history`
-(default `True`).
+(default `True`), `join_policy` (`ChildJoinPolicy.REQUIRED` default; `DETACHED` lets the
+parent finish without waiting on the child).
 
 | Use handoffs when… | Use agents-as-tools when… |
 |---|---|
@@ -251,14 +225,49 @@ handoffs without `handoff()`. `handoff()` params: `agent` (required), `descripti
 For HITL tools (`AskUserTool`, `RequestApprovalTool`), use the `agnt5-human-in-the-loop`
 skill.
 
+## Callbacks (guardrails, caching, redaction)
+
+Hooks run around the agent loop, each model call, and each tool call. Return `None` to
+continue normally; return a value to short-circuit (skip the model/tool and use that value);
+wrap in `override(...)` when the replacement value is itself `None`.
+
+```python
+from agnt5 import Agent, ToolCallbackContext
+
+BLOCKED = {"delete_account"}
+
+def guard_tools(cb: ToolCallbackContext):
+    if cb.tool_name in BLOCKED:
+        return {"error": f"{cb.tool_name} is not allowed"}   # tool is not executed
+    return None
+
+agent = Agent(name="support", model="openai/gpt-4o-mini", instructions="...",
+              tools=[...], before_tool_callback=guard_tools)
+```
+
+Hooks: `before_agent_callback` / `after_agent_callback` (`AgentCallbackContext`),
+`before_model_callback` / `after_model_callback` (`ModelCallbackContext`, request, response),
+`before_tool_callback` / `after_tool_callback` (`ToolCallbackContext`: `tool_name`,
+`arguments`, `iteration`). Or bundle them: `callbacks=AgentCallbacks(before_tool=...)`.
+
+## Memory
+
+Inside a workflow/function context:
+
+```python
+await ctx.memory.set("theme", "dark")                 # KV, session-scoped by default
+theme = await ctx.memory.get("theme", "light")
+await ctx.memory.working.merge({"step": "research"})   # dict scratchpad for the run
+await ctx.memory.user.save("Prefers concise answers", kind="preference")  # semantic, per user
+hits = await ctx.memory.user.search("answer style", limit=5)
+await ctx.conversation.add("user", message)            # session chat history
+history = await ctx.conversation.get_messages(limit=20)
+```
+
+Scopes: `ctx.memory.session`, `.user` (needs a `user_id`), `.run`, `.global_()`. The old
+`agnt5.memory.SemanticMemory` / `ConversationMemory` classes are deprecated — built-in
+vector-backed `SemanticMemory.store()` now raises.
+
 ## Source
 
-- https://agnt5.com/docs/build/agents -- `Agent(...)` constructor params, `run()`/`stream()`,
-  handoffs, agents-as-tools.
-- https://agnt5.com/docs/build/tools -- `@tool` decorator, built-in tools, sandbox workspaces,
-  MCP tools, HITL tools.
-- https://agnt5.com/docs/build/mcp -- `MCPClient` (stdio/HTTP/SSE transports), `MCPServer`
-  (expose AGNT5 primitives over MCP).
-- https://agnt5.com/docs/build/sandboxes -- `Sandbox()`, provider selection.
-- https://agnt5.com/docs/integrations/sandbox-providers -- per-provider env vars, local/
-  deployed credential setup, `sandbox-smoke` validation template, troubleshooting table.
+https://agnt5.com/docs/build/agents · https://agnt5.com/docs/build/tools · https://agnt5.com/docs/build/mcp · https://agnt5.com/docs/build/sandboxes

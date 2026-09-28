@@ -1,6 +1,6 @@
 ---
 name: agnt5-human-in-the-loop
-description: Add durable human-in-the-loop pauses to an AGNT5 workflow with ctx.wait_for_user() (text, approval, select, multiselect) or agent-level AskUserTool/RequestApprovalTool. Use when a workflow needs human approval, input, or a choice before continuing, including replay-safety guidance for code that runs before a pause.
+description: Add durable human-in-the-loop pauses to an AGNT5 workflow with ctx.wait_for_user() (text, approval, select, multiselect) or agent-level AskUserTool/RequestApprovalTool. Use when a workflow or agent needs to pause for human approval, ask the user a question, or let them pick an option before continuing ("ask_user", "request_approval", "wait for sign-off"), including replay-safety guidance for code that runs before a pause.
 ---
 
 # AGNT5 Human-in-the-loop
@@ -62,11 +62,11 @@ First run:   generate_draft() → wait_for_user() → pauses
 On resume:   generate_draft() → wait_for_user() → returns saved answer → publish()
 ```
 
-**Rule: guard side effects, never guard the pause.**
+**Rule: checkpoint side effects, never guard the pause.**
 
 ```python
-if not ctx._is_replay:
-    ctx.logger.info("Draft ready, waiting for approval...")   # fires once, not twice
+draft = await ctx.step(generate_draft, topic, key="draft")        # replay returns the cached draft
+await ctx.step(notify_reviewer, draft, key="notify")              # sent once, not on every resume
 
 decision = await ctx.wait_for_user(   # never guard this call itself
     question=f"Approve this draft?\n\n{draft}", input_type="approval",
@@ -74,8 +74,11 @@ decision = await ctx.wait_for_user(   # never guard this call itself
 )
 ```
 
-Anything that must not repeat on resume — sending a notification, calling an external API,
-charging a card — needs the `if not ctx._is_replay:` guard if it runs before a pause.
+Anything that must not repeat on resume — an LLM call, a notification, an external API call,
+a charge — belongs in a `ctx.step(...)` before the pause: on replay the checkpointed result
+returns without re-running it. Bare code in the workflow body (logging, string building) does
+re-run; that is fine as long as it has no side effects. `ctx._is_replay` exists but is a
+private attribute — use it at most to suppress duplicate log lines.
 
 ## Multi-step HITL with state
 
@@ -96,7 +99,8 @@ Let an agent itself ask a question or request approval mid-run. Both need a work
 module level:
 
 ```python
-from agnt5.tool import AskUserTool, RequestApprovalTool
+from agnt5 import Agent, WorkflowContext, workflow
+from agnt5.tool import AskUserTool, RequestApprovalTool   # not re-exported from `agnt5`
 
 @workflow
 async def agent_with_hitl(ctx: WorkflowContext, task: str) -> dict:
@@ -123,8 +127,4 @@ async def agent_with_hitl(ctx: WorkflowContext, task: str) -> dict:
 
 ## Source
 
-- https://agnt5.com/docs/build/human-in-the-loop -- `ctx.wait_for_user()` parameters and all
-  `input_type` values, multiple pauses per workflow, replay semantics
-  (`if not ctx._is_replay:`), edge cases.
-- https://agnt5.com/docs/build/tools (HITL tools section) -- `AskUserTool(ctx)`,
-  `RequestApprovalTool(ctx)`, must be instantiated inside the `@workflow` function.
+https://agnt5.com/docs/build/human-in-the-loop · https://agnt5.com/docs/build/tools

@@ -1,6 +1,6 @@
 ---
 name: agnt5-agent-skills
-description: Give AGNT5 agents on-demand capabilities via SKILL.md folders and always-on project guidance via AGENTS.md, instead of stuffing everything into one large prompt. Use when the user wants an AGNT5 agent to load specialized instructions only when relevant, share a skills pool across multiple agents, or apply standing conventions with AGENTS.md.
+description: Give AGNT5 agents on-demand capabilities via SKILL.md folders (Agent skills=/skills_dir=, load_skill tool, skill.loaded events) and always-on project guidance via AGENTS.md (agents_md=, discover_agents_md), instead of stuffing everything into one large prompt. Use when the user wants an AGNT5 agent to load specialized instructions only when relevant, share a skills pool across multiple agents, bundle scripts with a skill, or apply standing conventions with AGENTS.md.
 ---
 
 # AGNT5 Agent Skills
@@ -93,7 +93,8 @@ workspace under `skills/<name>/`, so the agent can run them with sandbox tools w
 setup. Without a sandbox, `load_skill` still returns instructions, but bundled scripts can't
 run.
 
-Each load emits a `skill.loaded` event (skill name, instructions length, bundled file count):
+Each load emits a `skill.loaded` event (`skill_name`, `instructions_length`,
+`resources_materialized` = bundled files copied into the sandbox):
 
 ```python
 from agnt5 import SkillLoaded
@@ -101,8 +102,6 @@ async for event in agent.stream("Analyze this PDF"):
     if isinstance(event, SkillLoaded):
         print(f"Loaded: {event.skill_name} ({event.instructions_length} chars)")
 ```
-
-TypeScript: `for await (const event of agent.stream(...)) { if (event.eventType === 'skill.loaded') ... }`.
 
 ## AGENTS.md — always-on guidance
 
@@ -124,16 +123,18 @@ last**:
 agent = Agent(..., agents_md=["./AGENTS.md", "./research/AGENTS.md"])
 ```
 
-Auto-merge a root `AGENTS.md` with directory-specific ones:
+Collect every `AGENTS.md` from a directory **up** to the repo root:
 
 ```python
 from agnt5 import Agent, discover_agents_md
-agent = Agent(..., agents_md=discover_agents_md("."))  # root first, most specific last
+agent = Agent(..., agents_md=discover_agents_md("./research"))  # root first, most specific last
 ```
 
-`discover_agents_md` walks upward from the start directory and stops at the repo root (the
-directory containing `.git`) — it never reads outside the project. Guidance loads before the
-skills catalog: standing rules first, then the on-demand capability list.
+`discover_agents_md` only walks **upward** from the start directory — start it at the most
+specific directory, not the root, or subdirectory files are missed. It stops at the first
+directory containing `.git` (`stop_at_git=True`); with no `.git` above it, it walks to the
+filesystem root. Guidance loads before the skills catalog: standing rules first, then the
+on-demand capability list.
 
 ## When to use which
 
@@ -145,13 +146,8 @@ skills catalog: standing rules first, then the on-demand capability list.
 Both optional — an agent with neither behaves exactly as before; they only change the prompt
 when configured.
 
-TypeScript naming: `skills_dir`→`skillsDir`, `agents_md`→`agentsMd`,
-`discover_skills`→`discoverSkills`, `discover_agents_md`→`discoverAgentsMd`,
-`Skill.from_path`→`Skill.fromPath` — otherwise identical, imported from `@agnt5/sdk`.
+TypeScript uses camelCase names (`skillsDir`, `agentsMd`, `discoverSkills`, …) from `@agnt5/sdk`.
 
 ## Source
 
-- https://agnt5.com/docs/build/skills -- `SKILL.md` folder format, `skills_dir`/`skills=`,
-  `load_skill` tool, sandbox file copying, `skill.loaded`/`SkillLoaded` events, loading the
-  whole pool or a single skill by path, `discover_skills`, `AGENTS.md` (`agents_md=`,
-  ordering, `discover_agents_md`).
+https://agnt5.com/docs/build/skills

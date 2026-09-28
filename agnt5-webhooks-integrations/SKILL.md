@@ -1,6 +1,6 @@
 ---
 name: agnt5-webhooks-integrations
-description: Trigger AGNT5 workflows from external events - Standard Webhooks, Sentry, Stripe, GitHub, or Slack, including signature verification and idempotent delivery, plus connecting AI provider credentials and integrating an existing application via the run API. Use when adding an external event trigger or connecting a third-party service.
+description: Connect AGNT5 to the outside world - trigger workflows from Standard Webhooks, Sentry, Stripe, GitHub, or Slack events and internal event() triggers (filters, input mapping, batching, delays), with signature verification and idempotent delivery; run an agent as a Slack/Discord/Teams/Telegram chat bot with ChatBot; and call deployed workflows from your own app with Client.run/submit and idempotency keys. Use for "receive a Stripe/GitHub/Sentry webhook", "start a workflow when X happens", "build a Slack bot", or "call my AGNT5 workflow from my backend".
 ---
 
 # AGNT5 Webhooks and Integrations
@@ -13,7 +13,8 @@ write the workflow and declare what it listens for.
 ## Declare a trigger
 
 ```python
-from agnt5 import workflow, webhook
+import json
+from agnt5 import webhook, workflow
 
 @workflow(name="triage_issue", triggers=[webhook("sentry", event="issue.created")])
 async def triage_issue(ctx, event: dict) -> dict:
@@ -25,6 +26,11 @@ async def triage_issue(ctx, event: dict) -> dict:
 `source` is one of `standard`, `sentry`, `stripe`, `github`, `slack`. A single event can fan
 out to multiple workflows — every workflow whose trigger matches `{source}.{event}` starts
 independently.
+
+Internal events use `event("user.signed_up")` the same way. Both `webhook()` and `event()`
+accept optional `filter_expression=` (only start when it matches), `input_mapping=` (reshape
+the payload into the workflow's parameters instead of receiving the envelope),
+`batch_window_ms=` (collect deliveries into one run), `delay_expression=`, and `trigger_id=`.
 
 ## What the workflow receives
 
@@ -94,52 +100,59 @@ Slack events are named `slack.<event.type>`, e.g. `slack.app_mention` (needs
 also requires creating a matching custom integration in Sentry's own
 **Settings → Integrations → Custom Integrations** and pasting AGNT5's webhook URL there.
 
-## AI provider credentials
+## Chat bots (Slack, Discord, Teams, Telegram)
 
-Model calls (`"provider/model"` strings like `openai/gpt-4o-mini`) need a credential
-configured before they'll work in a deployed worker:
+For a conversational bot, wrap an agent in `ChatBot` instead of hand-parsing `slack.*`
+webhooks — AGNT5 verifies and routes the event, runs the agent, and posts the reply:
 
-```bash
-# Local dev — export before agnt5 dev
-export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
+```python
+import os
+from agnt5 import Agent, Worker
+from agnt5.chat import ChatBot, SlackConfig
+
+agent = Agent(name="support-bot", model="anthropic/claude-sonnet-5",
+              instructions="You are a helpful support agent.")
+bot = ChatBot(agent=agent, adapters=[
+    SlackConfig(bot_token=os.environ["SLACK_BOT_TOKEN"],
+                signing_secret=os.environ["SLACK_SIGNING_SECRET"]),
+])
+
+worker = Worker(service_name="support-bot", agents=[bot])   # register the bot, not the bare agent
 ```
 
-For deployed workers: **Studio → Settings → Integrations**, add the provider, choose the
-narrowest scope (workspace / project / environment-specific). Supported with first-class
-Studio credentials: `openai`, `anthropic`, `google`/`gemini`, `groq`, `openrouter`,
-`mistral`, `deepseek`, `xai`. SDK-only (no Studio integration yet): `azure`, `bedrock`,
-`ollama`, `huggingface`. Code never sees the raw key — AGNT5 injects it as an env var or
-resolves it at runtime.
+Also `DiscordConfig`, `TeamsConfig`, `TelegramConfig`. Custom routing: decorate handlers with
+`@bot.on_mention`, `@bot.on_message`, `@bot.on_reaction`, `@bot.on_slash_command`,
+`@bot.on_action` (return a reply string, or `None` to stay silent).
 
-## Integration storage model
+## AI provider credentials
 
-Every integration = a **provider** (e.g. `openai`, `sentry`) + one or more **secrets**, role
-`api_key` (calls a provider API) or `webhook_secret` (verifies an inbound delivery). Scope an
-integration at **workspace** (every project) or **project** level; a secret can additionally
-be pinned to one **environment** so staging and production differ. Secrets are encrypted at
-rest and only decrypted at point of use.
+Model calls need a provider credential (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …). Local dev:
+`.env`, see `agnt5-project-init`. Deployed workers: Studio integrations or
+`agnt5 secrets set`, see `agnt5-deploy`.
 
 ## Integrating an existing application (non-webhook)
 
-To call a deployed AGNT5 workflow/agent/tool from your own app instead of receiving an
-inbound webhook, trigger it with `agnt5 run` against the deployed environment — see
-`agnt5-deploy` for the full command and `--env` flag. App code starts the workflow and
-records the returned run ID; AGNT5 owns durable execution; Studio owns run inspection (see
-`agnt5-observe`).
+Call a deployed workflow/agent from your own backend with the SDK client (reads
+`AGNT5_API_KEY`, and `AGNT5_GATEWAY_URL` defaulting to `https://gw.agnt5.com`):
+
+```python
+from agnt5 import Client
+
+client = Client()
+# blocking — waits for the result
+res = client.run("onboarding_workflow", {"user_email": "ada@example.com"},
+                 component_type="workflow", idempotency_key=f"onboard:{user_id}")
+print(res.status, res.output)
+
+# fire-and-forget — returns a run_id to poll or inspect later
+sub = client.submit("onboarding_workflow", {"user_email": "ada@example.com"},
+                    component_type="workflow", idempotency_key=f"onboard:{user_id}")
+```
+
+`AsyncClient` has the same methods. Always pass `idempotency_key=` from a stable business id so
+retries from your app don't start duplicate runs. From a shell, `agnt5 run ... --env
+production` does the same (see `agnt5-project-init`).
 
 ## Source
 
-- https://agnt5.com/docs/build/webhooks -- `webhook()` trigger, event envelope shape,
-  signature verification per source, delivery/idempotency semantics, event naming.
-- https://agnt5.com/docs/integrations/event-sources/overview and per-provider pages
-  (https://agnt5.com/docs/integrations/event-sources/slack,
-  https://agnt5.com/docs/integrations/event-sources/sentry, and others under that directory)
-  -- provider-specific setup.
-- https://agnt5.com/docs/integrations/ai-providers -- supported model providers, API key env
-  vars, Studio credential scoping.
-- https://agnt5.com/docs/integrations/overview -- how integrations and signing secrets are
-  stored.
-- https://agnt5.com/docs/run/deploying (triggering via API section) and
-  https://agnt5.com/docs/build/local-development (X-API-KEY, triggering via API) --
-  integrating an existing app by calling a deployed workflow/agent over HTTP.
+https://agnt5.com/docs/build/webhooks · https://agnt5.com/docs/integrations/event-sources/overview · https://agnt5.com/docs/integrations/ai-providers

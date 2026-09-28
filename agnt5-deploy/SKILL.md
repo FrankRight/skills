@@ -1,6 +1,6 @@
 ---
 name: agnt5-deploy
-description: Deploy an AGNT5 worker to a managed environment - set secrets, deploy to preview/staging/production, verify the deployment, promote a verified build forward, roll back, and scale replicas. Use when shipping a worker outside local development or managing environment-scoped configuration.
+description: Ship an AGNT5 worker to managed infrastructure - set secrets and AI provider credentials, agnt5 deploy to preview/staging/production (including CI flags), verify with deployment status/errors/logs and deploy debug, promote a verified build to production with agnt5 deployment promote, roll back, and scale replicas. Use for "deploy this", "promote to production", "roll back", "set the OpenAI key for production", "why did my deploy fail", or environment-scoped configuration.
 ---
 
 # AGNT5 Deploy
@@ -8,57 +8,55 @@ description: Deploy an AGNT5 worker to a managed environment - set secrets, depl
 Deploying moves your worker off your laptop onto AGNT5's managed infrastructure. Prereq:
 `agnt5 auth login`.
 
-## Set secrets and integrations before deploying
+## Secrets and AI provider credentials (before deploying)
 
 ```bash
 agnt5 secrets set --name OPENAI_API_KEY --type api_key            # prompted securely
 echo "sk-..." | agnt5 secrets set --name OPENAI_API_KEY --type api_key --stdin
-agnt5 secrets list
+agnt5 secrets set --name OPENAI_API_KEY --type api_key --environment <environment-id>  # env-only override
+agnt5 secrets list [--environment <environment-id>]
 ```
 
-Run inside the project directory — no `--project` flag needed. Connect AI providers / inbound
-webhook sources via **Studio → Settings → Integrations** (see `agnt5-webhooks-integrations`).
+Run inside the project directory (or pass `--project`). An environment-scoped secret
+overrides the project-scoped one of the same name for deployments serving that environment.
+
+Or use **Studio → Settings → Integrations**: add the provider at the narrowest scope
+(workspace / project / environment). First-class Studio providers: `openai`, `anthropic`,
+`google`/`gemini`, `groq`, `openrouter`, `mistral`, `deepseek`, `xai`; SDK-only (set as
+secrets/env): `azure`, `bedrock`, `ollama`, `huggingface`. Code never sees the raw key —
+AGNT5 injects it at runtime. Inbound webhook sources are set up there too (see
+`agnt5-webhooks-integrations`).
 
 ## Deploy
 
 ```bash
 agnt5 deploy                     # preview (default environment)
-agnt5 deploy --env staging
-agnt5 deploy --env production    # asks for confirmation
 agnt5 deploy --env staging --min-replicas 1 --max-replicas 4
+agnt5 deploy --dry-run           # validate config, show what would deploy
+agnt5 deploy --env production --interactive=false --no-wait   # CI: no prompts, don't block
 ```
 
-Output includes a Studio deployment URL and the exact `agnt5 logs <deployment-id>` command to
-tail it. **Usual flow: deploy to preview → verify → promote the same build forward** — don't
+Other useful flags: `--replicas`, `--wait-timeout 10m`, `--max-run-duration 1h|forever`,
+`--base-image ghcr.io/agnt5dev/python-worker:3.14`, `--skip-validation`, `--workspace`.
+Full list: `agnt5 deploy --help`.
+
+Output includes a Studio deployment URL and the `agnt5 logs <deployment-id>` command.
+**Usual flow: deploy to preview → verify → promote the same build forward** — don't
 redeploy per environment.
 
-## Verify
+## Verify / debug a deployment
 
 ```bash
-agnt5 deployments --environment production
+agnt5 deployment list [--status failed] [--limit 50]
+agnt5 deployment status --watch        # replicas, uptime of the latest deployment
+agnt5 deployment errors --since 1h     # scheduling failures, image pull errors
+agnt5 deploy debug <deployment-id> --logs   # timeline + diagnostics for a failed deploy
 agnt5 logs <deployment-id> --follow
-agnt5 logs <deployment-id> --tail 50
 ```
 
-## Test the deployed worker
-
-```bash
-# workflow — returns final JSON when the run completes
-agnt5 run my_workflow --type workflow --input '{"message": "..."}' --env production
-
-# function — streams output as SSE (also the default --type if omitted)
-agnt5 run my_function --type function --input '{"x": 1}' --env production
-
-# tool — returns the tool result as JSON
-agnt5 run my_tool --type tool --input '{"q": "..."}' --env production
-
-# agent — input must include a "message" field
-agnt5 run my_agent --type agent --input '{"message": "..."}' --env production
-```
-
-If `--type` is omitted, the CLI defaults to `function` and auto-retries the correct endpoint
-if it's actually a workflow/tool/agent. Redirect for scripting:
-`agnt5 run my_workflow --type workflow --input '{}' --env production > result.json`.
+Smoke-test the deployed worker with the same `agnt5 run` command as local dev plus `--env`:
+`agnt5 run my_workflow --type workflow --input '{"message": "..."}' --env production`
+(flags in `agnt5-project-init`).
 
 ## Environments — promote, don't redeploy
 
@@ -66,68 +64,35 @@ An **environment** is a named pointer to a deployment (preview/staging/productio
 default). The deployment image is immutable; promote/rollback just move the pointer, so the
 exact build verified in staging is what serves production.
 
-**Promote** (Studio → Deployments → select the verified deployment → Promote → pick target,
-optionally adjust replicas → confirm):
-
 ```bash
-curl -X POST 'https://api.agnt5.com/api/v1/deployments/promote' \
-  -H "X-API-KEY: <token>" -H "Content-Type: application/json" \
-  -d '{"source_deployment_id": "<deployment-id>", "target_environment_id": "<environment-id>"}'
+agnt5 deployment promote --latest --env staging
+agnt5 deployment promote <deployment-id> --env production        # asks for confirmation
+agnt5 deployment promote --latest --env production --yes          # CI
 ```
 
-Create the key first: `agnt5 service-keys create --name <name> --project <project-id>` — see
-https://agnt5.com/docs/build/local-development (Creating an X-API-KEY section) for the full
-walkthrough.
+The environment keeps serving its current deployment until the promoted one is ready, then
+traffic switches.
 
-**Rollback** — points the environment at the previously serving deployment from its promotion
-history (a pointer move, not a rebuild):
-
-```bash
-# Studio → Deployments → environment tab → Rollback
-# API: POST /api/v1/deployments/rollback
-```
+**Rollback** (no CLI command yet) — Studio → Deployments → environment tab → Rollback, or
+`POST /api/v1/deployments/rollback`. It points the environment at the previously serving
+deployment (a pointer move, not a rebuild).
 
 > Rollback changes which code serves traffic, not your data or secrets — if the bad deploy
 > also changed a secret or external state, revert those separately.
 
-## Scale / stop / resume
+## Scale / stop / resume (Studio or API)
 
-```bash
-agnt5 deployment status     # replicas, uptime of the latest deployment
-agnt5 deployment errors     # scheduling failures, image pull errors
-# Scale: Studio Scale action, or POST /api/v1/deployments/<id>/scale-up|scale-down
-# Stop: Studio Terminate (image/record persist, can resume)
-# Resume: Studio Start
-```
+Scale: Studio Scale action, or `POST /api/v1/deployments/<id>/scale-up|scale-down`. Stop:
+Studio Terminate (image/record persist). Resume: Studio Start. From Claude with the AGNT5 MCP
+connected: `scale_deployment`, `rollback_deployment`, `terminate_deployment`,
+`start_deployment`.
 
-## Environment-scoped secrets
+## Calling the deployed worker from your app
 
-```bash
-agnt5 secrets set --name OPENAI_API_KEY --type api_key                              # project-wide
-agnt5 secrets set --name OPENAI_API_KEY --type api_key --environment <environment-id>  # env-only override
-agnt5 secrets list --environment <environment-id>
-```
-
-An environment-scoped secret overrides the project-scoped one of the same name for
-deployments serving that environment.
-
-## Triggering via the API instead of the CLI
-
-Copy the exact curl command (workspace/deployment IDs prefilled) from the component page in
-Studio, replacing `X-API-KEY` with your service key — see `agnt5-webhooks-integrations` for
-creating one.
+Use `agnt5.Client` (see `agnt5-webhooks-integrations`) or copy the prefilled curl from the
+component page in Studio. Create an API key with
+`agnt5 service-keys create --name <name> --project <project-id> [--environment <env>]`.
 
 ## Source
 
-- https://agnt5.com/docs/run/deploying (Set secrets/integrations, Deploy, Verify, Deployment
-  logs, Testing after deployment sections) -- `agnt5 secrets set/list`,
-  `agnt5 deploy [--env ...]`, `agnt5 deployments`, `agnt5 logs <deployment-id>`, running a
-  deployed component via `agnt5 run --type ... --env ...`.
-- https://agnt5.com/docs/run/environments -- environment-as-pointer model, promote/rollback,
-  replica bounds, environment-scoped secrets.
-
-Cross-check currency before writing: https://agnt5.com/cli/commands,
-https://agnt5.com/cli/deploy, and https://agnt5.com/cli/configuration document some
-flags/commands that conflict with the more recently verified
-https://agnt5.com/docs/run/deploying and https://agnt5.com/docs/run/environments -- prefer
-the `docs/run/*` pages where they disagree.
+https://agnt5.com/docs/run/deploying · https://agnt5.com/docs/run/environments

@@ -15,10 +15,11 @@ traces, logs, and metrics — what to look at, in what order, and what counts as
 Both skills are written against tools that exist today:
 
 - Runs: `list_runs`, `get_run_summary`, `get_run_logs`
-- Traces: `get_trace_excerpt`, `get_trace`
+- Traces: `get_trace_excerpt`, `get_trace`, `list_traces` (e.g. `min_duration_ms` for slow runs)
 - Analytics: `get_analytics_dashboard`, `get_component_breakdown`, `get_error_breakdown`,
   `get_llm_usage`, `get_runs_timeseries`, `get_latency_timeseries`
-- Scores: `list_scores`, `get_score_evidence`
+- Scores: `list_scores` (also by `span_id` / `journal_id`), `get_score_evidence`,
+  `list_run_scorers`, `get_eval_journal_links`
 - Deployments: `list_deployments`, `get_deployment_events`
 
 ## Planned tools (no SQL)

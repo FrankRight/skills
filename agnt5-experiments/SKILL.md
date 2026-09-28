@@ -1,25 +1,85 @@
 ---
 name: agnt5-experiments
-description: Run an AGNT5 component or prompt against a dataset version, score every item, compare runs, and gate CI on pass-rate thresholds; or run lighter-weight inline evals with client.eval()/batch_eval() during development. Use when comparing a prompt/model/code change against a baseline before shipping it.
+description: Evaluate AGNT5 components end to end - curate eval datasets (add production runs or manual examples, bulk-upload JSONL/CSV, deduplicate, publish immutable versions), run a component, deployment, or prompt against a dataset version, score every item, compare runs, gate CI on pass-rate thresholds, and turn failed items into a regression dataset; or run lighter-weight inline evals with client.eval()/batch_eval(). Use for "set up an eval", "save this run as a test case", "import these examples from CSV", "publish a dataset version", "compare this prompt/model change against the baseline", "add an eval gate to CI", or "did my change make it better or worse".
 ---
 
-# AGNT5 Experiments
+# AGNT5 Experiments and Datasets
 
-An **experiment** binds a target (deployed component or Prompt) to a dataset version and a
-set of scorers (see `agnt5-datasets`, `agnt5-scorers`). Each **experiment run** executes the
-target against every dataset item, scores the outputs, and produces a comparable pass/fail
-summary. Both the experiment definition and the dataset are versioned/immutable, so two runs
-over the same dataset version are directly comparable.
+A **dataset** is a curated set of test cases. An **experiment** binds a target (deployed
+component, deployment, or Prompt) to a dataset **version** and a set of scorers (see
+`agnt5-scorers`). Each **experiment run** executes the target against every item, scores the
+outputs, and produces a comparable pass/fail summary. Datasets and experiment definitions are
+versioned and immutable, so two runs over the same dataset version are directly comparable.
 
-## When to use this vs. batch eval
-
-| Use `agnt5 experiments` (this, platform-tracked) | Use `client.eval()`/`batch_eval()` (SDK, code-only) |
+| Use `agnt5 experiments` (platform-tracked) | Use `client.eval()`/`batch_eval()` (SDK, code-only) |
 |---|---|
 | Need to gate CI on a threshold | Quick local regression check during development |
 | Comparing across deployments/dataset versions over time | One-off quality check, no need to persist results |
 | Need Studio visibility, annotations, rescoring | Don't need the full platform overhead |
 
-## Create and run (CLI)
+All dataset, experiment, report, and score commands take `--format table|json|jsonl` (jsonl
+for piping to `jq`) and `--project-id <uuid>` (target a project other than the current one).
+
+## 1. Build a dataset
+
+Every dataset has one mutable **draft** (edits land here) and zero or more immutable
+**versions** — experiments always run against a version, never the draft.
+
+Item fields: `input` (JSON, required), `expected_output` (JSON, optional — scorers compare
+against it), `metadata` (your labels), `events` (trace events, captured when importing from a
+run — needed by trace-level scorers), `split` (e.g. `train`/`test`).
+
+```bash
+agnt5 datasets create --name support-agent-golden-set \
+  --description "Curated support conversations with verified answers"
+agnt5 datasets list --search support-agent     # find the dataset ID later
+
+# From a production run — captures input/output/trace events
+agnt5 inspect runs ls                          # find the run ID first
+agnt5 datasets add-run <dataset-id> <run-id> \
+  --expected-output '{"answer": "Refund issued within 5 business days"}'
+  # add --metadata '{"source":"prod"}' on create/add-run/add-example/publish to label items
+
+# Manual example
+agnt5 datasets add-example <dataset-id> \
+  --input '{"message": "Where is my order #4512?"}' \
+  --expected-output '{"intent": "order_status"}'
+
+# Bulk JSONL — one item per line: {"input":…, "expected_output":…, "metadata":…, "events":…, "split":…}
+agnt5 datasets upload <dataset-id> --file examples.jsonl
+cat examples.jsonl | agnt5 datasets upload <dataset-id>     # or pipe from stdin
+
+# Bulk CSV — map columns to fields
+agnt5 datasets upload-csv <dataset-id> --file examples.csv \
+  --input-column question --expected-output-column answer --split-column split
+  # --partial defaults true (valid rows import even if some fail); --partial=false = all-or-nothing
+```
+
+Other CSV flags: `--metadata-column`, `--events-column`, `--tags-column`,
+`--source-run-id-column`, `--source-ref(-column)`, `--delimiter`, `--no-header` (columns by
+zero-based index). Or Studio → project → **Evaluate → Datasets**. From Claude with the AGNT5
+MCP connected: `create_eval_dataset`, `add_run_to_dataset_draft`,
+`add_manual_dataset_example`, `import_dataset_csv`, `preview_dataset_dedup` /
+`apply_dataset_dedup`, `publish_dataset_version`.
+
+### Deduplicate and publish
+
+```bash
+agnt5 datasets dedup preview <dataset-id> --include-preview        # see duplicate groups first
+agnt5 datasets dedup apply <dataset-id>                            # keep earliest, remove rest
+agnt5 datasets dedup apply <dataset-id> --remove-item-id <item-id> # or target specific items
+
+agnt5 datasets publish <dataset-id> --description "Adds 40 cancellation cases from last week"
+agnt5 datasets versions list <dataset-id>
+agnt5 datasets versions export <dataset-id> <version-id>                             # as JSONL
+agnt5 datasets versions compare <dataset-id> <base-version-id> <compare-version-id>  # added/removed/changed
+agnt5 datasets versions restore-draft <dataset-id> <version-id>                      # reset draft
+agnt5 datasets examples list <dataset-id> --version 2 --include-payload
+```
+
+The draft stays editable after publishing — keep curating, publish again when ready.
+
+## 2. Create and run an experiment
 
 ```bash
 agnt5 experiments create --name support-agent-quality \
@@ -42,11 +102,11 @@ agnt5 experiments run <experiment-id> --deployment-id <candidate-id> --name "pr-
 ```
 
 Required for create: `--name`, `--dataset-id`, `--dataset-version-id`, a target
-(`--target-type component --deployment-id --component-name --component-type` or
-`--target-type prompt --prompt-id`), at least one `--builtin-scorer <name|json>` or
-`--scorer-id <uuid>`.
+(`--target-type component|deployment|prompt` with the matching IDs), and at least one
+`--builtin-scorer <name|json>` or `--scorer-id <uuid>` (both repeatable). `run` also takes
+`--experiment-version-id` and `--config`. Full flag list: `agnt5 experiments create --help`.
 
-## Inspect results
+## 3. Inspect and compare
 
 ```bash
 agnt5 experiments runs list <experiment-id>
@@ -55,15 +115,8 @@ agnt5 reports summary <run-id>                  # same, standalone
 agnt5 reports failures <run-id>                 # failed items only
 agnt5 scores list --run-id <run-id>
 agnt5 experiments runs cancel <experiment-id> <run-id>
+agnt5 experiments runs compare <base-run-id> <compare-run-id>   # score movement + items that flipped
 ```
-
-## Compare two runs
-
-```bash
-agnt5 experiments runs compare <base-run-id> <compare-run-id>
-```
-
-Shows aggregate score movement and which items flipped pass/fail.
 
 ## Gate CI on results
 
@@ -82,8 +135,8 @@ agnt5 reports export <run-id> --artifact-format csv --out-file eval-results.csv
 | `3` | Run failed or cancelled |
 | `4` | Wait timed out |
 
-`--fail-on-gate` defaults `true` with `--wait`; pass `--fail-on-gate=false` to inspect the
-result yourself instead of failing the pipeline. Threshold lives on the experiment's
+`--fail-on-gate` defaults to `true`; pass `--fail-on-gate=false` to inspect the result
+yourself instead of failing the pipeline. The threshold lives on the experiment's
 `--config '{"passed_threshold": <0..1>}'`, not in the pipeline script.
 
 ## Turn failures into a regression test
@@ -93,6 +146,8 @@ agnt5 experiments runs regression-dataset <run-id> --name support-agent-regressi
 # rerun against a specific fix candidate:
 agnt5 experiments runs regression-dataset <run-id> --name support-agent-regressions \
   --start-run --deployment-id <candidate-deployment-id> --wait
+# only specific failed items:
+agnt5 experiments runs regression-dataset <run-id> --name order-bugs --run-item-id <item-id> --run-item-id <item-id>
 ```
 
 Builds a dataset from the failed items, creates a regression experiment over it, and (with
@@ -156,23 +211,13 @@ for item in result.results:
 ```
 
 Item input forms (mix freely): plain dicts + separate `expected` list; dicts with
-`input`/`expected` keys; `BatchEvalItem(input, expected?, item_id?)` for full control.
+`input`/`expected` keys; `BatchEvalItem(input, expected?, item_id?)` for full control. Both
+methods accept `deployment_id=` to evaluate a specific deployment.
 
 `BatchEvalResult`: `batch_id`, `status` (`completed`/`partial_failure`/`failed`), `results`,
 `stats`, `pass_rate`, `passing_items()`, `failing_items()` (scoring failures),
 `failed_items()` (evaluation errors — distinct from scoring failures, check both).
 
-TypeScript: `client.batchEval(component, items, { scorers, componentType, maxConcurrency })`,
-same types from `@agnt5/sdk`, reads `AGNT5_GATEWAY_URL` from `process.env`.
-
-## Output and project targeting (all eval commands)
-
-`--format table|json|jsonl` (jsonl for `jq` piping), `--project-id <uuid>`.
-
 ## Source
 
-- https://agnt5.com/docs/improve/experiments -- `agnt5 experiments create/run/runs
-  list|show|compare|regression-dataset`, `agnt5 reports summary|failures|ci|wait|export`, CI
-  gating exit codes, rescoring a completed run, annotating run items.
-- https://agnt5.com/docs/improve/batch-eval -- `client.eval()`/`client.batch_eval()` SDK
-  methods, input formats, concurrency/timeouts, reading `BatchEvalResult`.
+https://agnt5.com/docs/improve/datasets · https://agnt5.com/docs/improve/experiments · https://agnt5.com/docs/improve/batch-eval

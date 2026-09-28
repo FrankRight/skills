@@ -1,6 +1,6 @@
 ---
 name: agnt5-workflows
-description: Define AGNT5 functions and workflows - @function with retries, backoff, and timeouts; durable workflow steps via ctx.step(), parallel/gather/batch/map fan-out, durable sleep, run/session state, and event or webhook triggers. Use when wrapping a unit of work in a retryable/timeout-bound function, adding or restructuring workflow orchestration logic, composing functions and agents into a pipeline, or making an existing flow durable/checkpointed.
+description: Define AGNT5 functions and workflows - @function with retries, backoff, and timeouts; durable workflow steps via ctx.step() with stable keys, parallel/gather/batch/map fan-out, durable sleep, cron-scheduled and chat workflows, run/session/user state, and idempotency keys for side effects. Use when wrapping a unit of work in a retryable/timeout-bound function, adding or restructuring workflow orchestration, composing functions and agents into a pipeline, scheduling a workflow on a cron, or making a flow durable so it resumes after a crash without repeating side effects.
 ---
 
 # AGNT5 Workflows
@@ -22,8 +22,14 @@ async def onboarding_workflow(ctx: WorkflowContext, user_email: str) -> dict:
 ```
 
 First parameter must be `ctx: WorkflowContext`; everything after is the input the caller
-passes. `@workflow(name=..., triggers=[...])` accepts an explicit `name` (defaults to the
-function name) and event/webhook `triggers`.
+passes. `@workflow` options:
+
+| Option | Meaning |
+|---|---|
+| `name=` | Explicit name (defaults to the function name) |
+| `cron="0 9 * * *"` | Run on a schedule |
+| `chat=True` | Multi-turn conversation workflow (one session, many runs) |
+| `triggers=[event(...), webhook(...)]` | Event/webhook triggers — see `agnt5-webhooks-integrations` |
 
 ## Defining a function
 
@@ -38,8 +44,9 @@ async def send_email(ctx: FunctionContext, to: str, subject: str, body: str) -> 
 
 `@function` parameters: `name`, `retries` (`int | RetryPolicy`), `backoff`
 (`"constant" | "linear" | "exponential"`), `timeout_ms`. `FunctionContext` gives you
-`ctx.run_id`, `ctx.attempt` (0 = first try), `ctx.logger`, `ctx.sleep(seconds)`. Sync
-functions are auto-wrapped in a thread pool.
+`ctx.run_id`, `ctx.attempt` (0 = first try), `ctx.logger`, `ctx.sleep(seconds)` (a plain,
+**non-durable** sleep — only `WorkflowContext.sleep` survives restarts). Sync functions are
+auto-wrapped in a thread pool.
 
 ## Steps: the unit of durable work
 
@@ -49,8 +56,13 @@ function does **not** run again.
 
 | Call style | Checkpointed | Use when |
 |---|---|---|
-| `await ctx.step(fn, *args)` | Yes | Always, inside a workflow |
+| `await ctx.step(fn, *args, key="...")` | Yes | Always, inside a workflow |
+| `await ctx.run(fn, *args)` | Yes | Shorthand for `ctx.step` with an auto-generated name |
 | `await fn(ctx, *args)` | No | One-off calls where replay re-running is fine |
+
+Pass a stable `key=` whenever steps run concurrently, repeat in a loop, or may be reordered by
+a code change — without one, keys come from call order, and replay can match the wrong
+checkpoint.
 
 > `ctx.task()` is **deprecated** — if you see it in older example code, replace it with
 > `ctx.step()`.
@@ -80,15 +92,15 @@ async def order_workflow(ctx: WorkflowContext, order_id: str) -> dict:
 ```python
 # parallel — positional, ordered
 sales, inventory, customers = await ctx.parallel(
-    ctx.step(fetch_sales, report_id),
-    ctx.step(fetch_inventory, report_id),
-    ctx.step(fetch_customers, report_id),
+    ctx.step(fetch_sales, report_id, key="sales"),
+    ctx.step(fetch_inventory, report_id, key="inventory"),
+    ctx.step(fetch_customers, report_id, key="customers"),
 )
 
-# gather — named
+# gather — named (wrap each call in ctx.step so it is checkpointed)
 data = await ctx.gather(
-    revenue=fetch_revenue(),
-    users=fetch_active_users(),
+    revenue=ctx.step(fetch_revenue, key="revenue"),
+    users=ctx.step(fetch_active_users, key="users"),
 )
 # data["revenue"], data["users"]
 
@@ -121,30 +133,42 @@ await ctx.step(send_follow_up, user_id)
 
 | Scope | Access | Persists |
 |---|---|---|
-| Run | `ctx.state` | Current run only, cleared when the run finishes |
-| Session | `ctx.session.state` | Across multiple runs sharing the same `session_id` |
+| Run | `ctx.state` (sync `get`/`set`; `await set_async` in async code) | Current run only |
+| Session | `ctx.session.state` (async) | Across runs sharing the same `session_id` |
+| User | `ctx.user.state` (async) | Across all runs for the same `user_id` |
 
 ```python
-await ctx.state.set("phase", "started")
+await ctx.state.set_async("phase", "started")   # ctx.state.set(...) is sync — don't await it
+phase = ctx.state.get("phase")
 count = await ctx.session.state.get("visit_count", 0)
 await ctx.session.state.set("visit_count", count + 1)
+```
+
+For agent memory (`ctx.memory`, `ctx.conversation`), see `agnt5-agents-tools`.
+
+## Idempotent side effects
+
+Steps are checkpointed, but a step can still run twice if the worker dies after the side effect
+and before the checkpoint. Pass the activation's idempotency key to downstream APIs that
+support one:
+
+```python
+@function(retries=3)
+async def charge_customer(ctx: FunctionContext, order_id: str, total: int) -> dict:
+    key = ctx.activation.idempotency_key if ctx.activation else f"charge:{order_id}"
+    return await stripe_charge(order_id, total, idempotency_key=key)
 ```
 
 ## Triggers
 
 ```python
-from agnt5.types import event, webhook
-
-@workflow(triggers=[event("user.signed_up")])
-async def welcome_workflow(ctx: WorkflowContext, user_id: str) -> str: ...
-
-@workflow(triggers=[webhook("stripe", event="payment_intent.succeeded")])
-async def payment_workflow(ctx: WorkflowContext, amount: int, currency: str) -> str: ...
+@workflow(name="daily_report", cron="0 9 * * *")
+async def daily_report(ctx: WorkflowContext) -> dict: ...
 ```
 
-For full webhook setup (signature verification, provider event names, idempotency), use the
-`agnt5-webhooks-integrations` skill. For pausing a workflow on `ctx.wait_for_user()`, use the
-`agnt5-human-in-the-loop` skill.
+For event and webhook triggers (`triggers=[event(...)]`, `webhook(...)`, payload envelope,
+signature verification), use `agnt5-webhooks-integrations`. For pausing a workflow on
+`ctx.wait_for_user()`, use `agnt5-human-in-the-loop`.
 
 ## Common mistake to avoid
 
@@ -154,12 +178,4 @@ a workflow — it silently loses checkpointing and re-runs on every replay. Alwa
 
 ## Source
 
-- https://agnt5.com/docs/build/workflows -- `@workflow`, `ctx.step()`,
-  `ctx.parallel()`/`ctx.gather()`/`ctx.batch()`/`ctx.map()`, `ctx.sleep()`, run/session state,
-  event and webhook triggers.
-- https://agnt5.com/docs/build/functions -- `@function`, retries, backoff, timeouts,
-  `FunctionContext`.
-
-Cross-check currency before trusting anything beyond this: https://agnt5.com/docs/build/workflows/defining-a-workflow
-is an older, stale duplicate of https://agnt5.com/docs/build/workflows -- ignore it in favor
-of the latter.
+https://agnt5.com/docs/build/workflows · https://agnt5.com/docs/build/functions

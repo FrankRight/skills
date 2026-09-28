@@ -1,6 +1,6 @@
 ---
 name: agnt5-quality-cases
-description: Track a behavior regression, eval failure, or production incident through AGNT5's structured quality-case lifecycle (open, triaged, investigating, candidate_ready, verified, shipped, closed), linked to the runs, scores, and datasets that produced it. Use when opening, updating, or resolving a quality issue.
+description: Open, update, link, and resolve AGNT5 quality cases - track a behavior regression, eval failure, or production incident from discovery to a verified, shipped fix, linked to the runs, scores, experiments, and datasets that produced it; and automate the topic -> case -> proposal -> eval -> promote cycle with the SDK SelfImprovementLoop. Use when the user says "open a quality case", "track this regression", "mark the fix verified", "link this run to the case", or wants a self-improvement loop.
 ---
 
 # AGNT5 Quality Cases
@@ -42,8 +42,8 @@ open → triaged → investigating → candidate_ready → verified → shipped 
 ## Create
 
 From Claude with the AGNT5 MCP server connected, prefer the
-`create_quality_case`/`get_quality_case`/`list_quality_cases` tools instead of raw curl — no
-token handling needed.
+`create_quality_case` / `get_quality_case` / `list_quality_cases` tools over raw curl — same
+fields as the REST API, no token handling.
 
 ```bash
 curl -X POST "https://api.agnt5.com/api/v1/projects/<project-id>/quality/cases" \
@@ -61,9 +61,11 @@ curl -X POST "https://api.agnt5.com/api/v1/projects/<project-id>/quality/cases" 
 
 Or Studio → **Evaluate → Quality cases → New case** (can link a run/experiment/alert at
 creation time). Or from a failing experiment run: Studio run page → select failing items →
-**Actions → Create quality case**. From Claude with AGNT5 connected, use the MCP tools
-`create_quality_case` / `get_quality_case` / `list_quality_cases` directly — same fields as
-the REST API.
+**Actions → Create quality case**.
+
+Recurring production behaviors surface first as **behavior topics** (`GET
+.../quality/topics`); `POST .../quality/topics/<topic-id>/create-case` turns one into a case
+with its representative runs attached.
 
 ## Update
 
@@ -85,12 +87,9 @@ Combinable filters: `status`, `severity`, `category`, `source_type`, `label`.
 
 ## Verify a fix before shipping
 
-Once a fix is `candidate_ready`, build a regression dataset from the failing items (see
-`agnt5-experiments`):
-
-```bash
-agnt5 experiments runs regression-dataset <run-id> --name "order-status-regression" --start-run --wait
-```
+Once a fix is `candidate_ready`, build a regression dataset from the case's linked failing
+runs with `POST .../quality/cases/<case-id>/regression-dataset`, or from a failing experiment
+run with `agnt5 experiments runs regression-dataset` (see `agnt5-experiments`).
 
 Then link it and move the case forward as the gate passes:
 
@@ -100,12 +99,12 @@ curl -X PATCH ".../quality/cases/<case-id>" -H "Authorization: Bearer <token>" \
 # ... and "shipped" after the fix deploys
 ```
 
-Link a run item to an existing case directly:
+Link an experiment, experiment run, or other evidence to an existing case:
 
 ```bash
 curl -X POST ".../quality/cases/<case-id>/links" -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"link_type": "experiment_run_item", "link_id": "<run-item-id>"}'
+  -d '{"link_type": "experiment_run", "target_id": "<run-id>", "metadata": {"experiment_id": "<experiment-id>"}}'
 ```
 
 ## Audit trail
@@ -115,15 +114,47 @@ Every status change, note, or link auto-creates a case event. Add one explicitly
 ```bash
 curl -X POST ".../quality/cases/<case-id>/events" -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"event_type": "note_added", "note": "Confirmed stale cache reproduces on 10% of cold-start runs."}'
+  -d '{"event_type": "note_added", "actor_kind": "user", "body": "Confirmed stale cache reproduces on 10% of cold-start runs."}'
 ```
 
 Event types: `note_added`, `investigation_added`, `candidate_linked`,
-`release_evidence_linked`.
+`release_evidence_linked`, `self_improvement_loop_decision`. Payload: `event_type`, `body`,
+optional `actor_kind` and `metadata`.
+
+## Automate it: the self-improvement loop
+
+`agnt5.improvement.SelfImprovementLoop` runs the whole cycle against the control plane: pick a
+behavior topic → open a case → create a proposal → build a regression dataset → run an eval
+experiment against a candidate deployment → decide whether to promote.
+
+```python
+# inside an async @workflow or @function handler (ctx = its context)
+from agnt5.improvement import (
+    AGNT5ImprovementBlocks, ImprovementControlPlaneClient, ImprovementLoopPolicy,
+    ImprovementLoopRequest, LoopStatus, SelfImprovementLoop,
+)
+
+# Reads AGNT5_CONTROL_PLANE_URL (or AGNT5_API_BASE_URL), AGNT5_PROJECT_ID,
+# AGNT5_CONTROL_PLANE_TOKEN (or AGNT5_ACCESS_TOKEN) when args are omitted.
+client = ImprovementControlPlaneClient()
+loop = SelfImprovementLoop(
+    AGNT5ImprovementBlocks(client),
+    ImprovementLoopPolicy(min_pass_rate=0.95, max_failed_items=0,
+                          require_human_approval=True, allow_auto_promote=False),
+)
+result = await loop.run(ctx, ImprovementLoopRequest(
+    component_name="support_agent",
+    metadata={"candidate_deployment_id": "<deployment-id>", "wait_for_eval": True},
+))
+if result.status == LoopStatus.NEEDS_APPROVAL:
+    ...  # a human approves the attempt in Studio
+```
+
+`result.status` is one of `NO_TOPIC`, `EVALUATION_PENDING`, `EVALUATION_FAILED`,
+`NEEDS_APPROVAL`, `PROMOTION_READY`. Pass `topic_id=` or `case_id=` on the request to skip
+topic selection. Keep `require_human_approval=True` unless the user explicitly wants
+auto-promotion.
 
 ## Source
 
-- https://agnt5.com/docs/improve/quality-cases -- case anatomy, categories, severities, lifecycle
-  statuses, creating a case (Studio / REST / MCP tools `create_quality_case`/
-  `get_quality_case`/`list_quality_cases`), updating, listing/filtering, building a regression
-  dataset from a case, audit-trail events, source types.
+https://agnt5.com/docs/improve/quality-cases

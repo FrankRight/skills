@@ -69,6 +69,10 @@ Two things to check while reading spans:
   mismatch is itself a finding — the check is reading the wrong key or type.
 - **Empty trace?** If the excerpt returns `total_spans: 0`, the logs are your only source.
   Say so in the report.
+- **Observed spans** (`capture_mode=observed`, from automatic OpenAI / OpenAI Agents SDK /
+  Google ADK capture) are best-effort: a missing observed span is not proof the call didn't
+  happen, and with `AGNT5_CAPTURE_CONTENT_MODE=metadata-only` prompts and responses are
+  empty by design — don't read an empty field there as the model returning nothing.
 
 ### 3. Read the logs — always
 

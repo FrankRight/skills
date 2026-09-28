@@ -1,6 +1,6 @@
 ---
 name: agnt5-online-evals
-description: Sample completed production runs, score them asynchronously against a published scorer, and alert when the pass rate drops below a threshold. Use when setting up continuous quality monitoring on a live deployment rather than a one-off experiment.
+description: Set up AGNT5 online evals - an evaluation policy that samples completed production runs (uniform rate plus boost rules for slow runs), scores them asynchronously with a published scorer, and fires an alert when the pass rate drops below a floor. Use for "monitor production quality", "score a sample of live runs", "alert me when quality drops", or editing/disabling an existing policy or alert - not for a one-off experiment.
 ---
 
 # AGNT5 Online Evals
@@ -10,7 +10,8 @@ Online evals measure production behavior without blocking user traffic: attach a
 them in the background, then Studio shows live aggregates, sample decisions, and alerts.
 
 **Prerequisites**: a deployment receiving production runs, at least one enabled scorer with a
-published version, developer access to the project.
+published version (built-in, or a custom one from `agnt5-scorers`; from Claude the AGNT5 MCP
+tools `create_scorer` / `publish_scorer_version` do this), developer access to the project.
 
 ## Set up in Studio (fastest path)
 
@@ -55,29 +56,14 @@ custom scorer runtime).
 ## Enable via API
 
 ```bash
-# 1. Create the policy
+# 1. Create the policy — body is the "policy" object from the preview above
 curl -X POST "https://api.agnt5.com/api/v1/projects/<project-id>/eval/policies" \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-  -d '{
-    "mode": "async_online", "binding_scope": "deployment", "deployment_id": "<deployment-id>",
-    "sampling_config": {
-      "type": "uniform", "rate": 0.02,
-      "boost": [{"field": "duration_ms", "op": "gte", "value": 30000, "rate": 0.10}]
-    },
-    "scorers": [{"scorer_id": "<scorer-id>", "scorer_version_id": "<scorer-version-id>",
-                 "scope": "run", "ordinal": 1, "required": true, "threshold": 0.9, "weight": 1}]
-  }'
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d @policy.json
 
-# 2. Create an alert linked to the returned policy ID
+# 2. Create the alert — body is the "alert" object from the preview, plus
+#    "evaluation_policy_id": "<policy-id returned by step 1>"
 curl -X POST "https://api.agnt5.com/api/v1/projects/<project-id>/eval/online/alerts" \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-  -d '{
-    "name": "Production quality drop", "severity": "warning",
-    "evaluation_policy_id": "<policy-id>", "deployment_id": "<deployment-id>",
-    "scorer_id": "<scorer-id>", "scorer_version_id": "<scorer-version-id>",
-    "window_seconds": 1800, "metric": "pass_rate", "operator": "lt", "threshold": 0.9,
-    "min_count": 50, "action_type": "notify"
-  }'
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d @alert.json
 ```
 
 ## Operate a running setup
@@ -100,8 +86,4 @@ When an alert fires, open a quality case to track the investigation — see
 
 ## Source
 
-- https://agnt5.com/docs/improve/online-evals -- prerequisites, Studio setup flow,
-  preview/enable via API
-  (`/eval/online/preview`, `/eval/policies`, `/eval/online/alerts`), sampling config (uniform
-  rate + boost rules), operating endpoints (list/disable policies, list sample decisions,
-  live scores).
+https://agnt5.com/docs/improve/online-evals

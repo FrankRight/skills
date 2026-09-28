@@ -224,7 +224,13 @@ exactly measurable, recommend (do not create) the follow-up:
   **online eval** (`agnt5-online-evals`) so it is counted continuously.
 - **Instrumentation** — the span attribute or log line that would make it filterable (e.g.
   record `tool_result_empty=true`, the prompt version, the tenant tier).
-- A **dataset** of the affected runs (`agnt5-datasets`) to regression-test the fix.
+- A **dataset** of the affected runs (`agnt5-experiments`) to regression-test the fix.
+- A **quality case** (`agnt5-quality-cases`) to track the fix to verified/shipped. Check
+  whether AGNT5 already surfaced it as a behavior topic before opening a new case.
+
+Observed spans (`capture_mode=observed`, automatic OpenAI / OpenAI Agents SDK / Google ADK
+capture) are best-effort and may be content-free under `metadata-only` capture — don't count
+their absence or empty content as a behavior of the application.
 
 ## Guardrails
 

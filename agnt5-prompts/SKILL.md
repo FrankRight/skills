@@ -1,6 +1,6 @@
 ---
 name: agnt5-prompts
-description: Manage AGNT5 Prompt artifacts as versioned, code-bundled text - author prompts/<id>.mdx, select versions, override runtime model/temperature settings, and use prompt caching. Use when extracting inline prompt text into a managed Prompt or changing how a prompt version resolves in dev vs production.
+description: Manage AGNT5 Prompt artifacts as versioned, code-bundled text - author prompts/<id>.mdx files, pin or select a prompt version, override runtime model/temperature per run, and enable prompt caching (cache=True / lm.PromptCache, Gemini context caches) to get cache hits. Use when extracting inline prompt text into a managed Prompt, pinning a prompt version, changing how a prompt resolves in dev vs production, or debugging low cache-hit rates.
 ---
 
 # AGNT5 Prompts
@@ -12,7 +12,7 @@ application code for production — so the prompt version and code version move 
 
 ```python
 from agnt5 import lm
-from agnt5.lm import Prompt
+from agnt5.lm import Prompt   # NOT `from agnt5 import Prompt` — that is the MCP Prompt type
 
 response = await lm.generate(
     model="openai/gpt-4o-mini",
@@ -56,11 +56,10 @@ via `<System>`, `<User>`, `<Assistant>` blocks (no block present → treated as 
 message). Files must be Markdown or MDX — not `.json` or `prompts.lock`.
 
 **Production resolution order:**
-1. `AGNT5_PROMPT_OVERRIDE`
-2. `AGNT5_PROMPTS_MANIFEST`
-3. `prompts/<id>.mdx`
-4. `prompts/<id>.md`
-5. AGNT5 prompt-run API fallback (non-production draft/test only)
+1. `AGNT5_PROMPT_OVERRIDE` (a `.md`/`.mdx` file, or a directory searched like the cwd)
+2. `AGNT5_PROMPTS_MANIFEST` (same)
+3. `<cwd>/prompts/<id>.mdx`, then `prompts/<id>.md`, then `<cwd>/<id>.mdx`, `<cwd>/<id>.md`
+4. AGNT5 prompt-run API fallback (non-production draft/test only)
 
 In production, the Prompt **must** be bundled with the deployed artifact — a missing Prompt
 fails closed, it does not fall back to control-plane state.
@@ -70,29 +69,33 @@ fails closed, it does not fall back to control-plane state.
 ```python
 response = await lm.generate(
     model="openai/gpt-4o-mini",
-    prompt=Prompt(id="support_reply", version="version-3"),
+    prompt=Prompt(id="support_reply", version="3"),
 )
 ```
 
-`version` matches either the file's `version` or `version_id`.
+`version` is an exact string match against the file's `version` (`"3"`) or `version_id`
+(the UUID) — `"version-3"` or `"v3"` will not match.
 
 ## Override runtime settings without changing the Prompt
 
 Useful for Playground / experiments / one-off comparisons — workflow code stays unchanged:
 
 ```python
+from agnt5 import LLMRuntimeOptions
+
 ctx.runtime.llm.model = "openai/gpt-4o"
 ctx.runtime.llm.temperature = 0.6
 ctx.runtime.llm.max_tokens = 800
-ctx.runtime.llm.top_p = 0.9   # TypeScript: ctx.runtime.llm.topP
+ctx.runtime.llm.top_p = 0.9
 
 # per-prompt overrides for workflows with multiple prompts
-ctx.runtime.prompts["draft"] = LLMRuntimeOptions(model="anthropic/claude-3-5-haiku-20241022", temperature=0.7)
+ctx.runtime.prompts["draft"] = LLMRuntimeOptions(model="anthropic/claude-haiku-4-5", temperature=0.7)
 ctx.runtime.prompts["review"] = LLMRuntimeOptions(model="openai/gpt-4o", temperature=0.3)
 ```
 
 The Prompt file remains the source of truth for prompt *text*; runtime overrides only change
-model execution settings for that run. Prompt-specific overrides win over the global default.
+model execution settings for that run. A prompt-specific override **replaces** the global one
+for that prompt (fields are not merged — set every field you need).
 
 ## Use inside workflows
 
@@ -114,11 +117,26 @@ async def draft_reply(ctx: FunctionContext, customer_name: str, topic: str) -> s
 Older code may use `prompt_ref="support_reply"` / `PromptRef`. Still supported, but new code
 should use `prompt=Prompt(id=...)`.
 
-## Prompt caching (Anthropic models only)
+## Prompt caching
 
-Server-side feature: reuses an identical leading prefix (tool defs → system prompt →
-messages) without reprocessing — ~80-90% latency drop and ~10% token cost for the cached
-portion. Automatic, no config needed; AGNT5 surfaces the numbers on `response.usage`:
+Reuses an identical leading prefix (tool defs → system prompt → messages) without reprocessing
+— large latency and token-cost savings for the cached portion. Turn it on per call or per
+agent:
+
+```python
+response = await lm.generate(model="anthropic/claude-sonnet-5", prompt=..., cache=True)
+agent = Agent(name="support", model="anthropic/claude-sonnet-5", instructions=..., cache=True)
+
+# explicit policy: TTL, cache key, retention
+agent = Agent(..., cache=lm.PromptCache(ttl="1h", key="support-v3"))
+
+# Gemini explicit context cache for a large reusable document
+cache = await lm.create_cache("google/gemini-2.5-pro", [big_doc], ttl_seconds=3600)
+response = await lm.generate(model="google/gemini-2.5-pro", prompt=..., cache=cache)
+```
+
+`cache_control=` / `cache_ttl=` on `Agent` are deprecated aliases for `cache=`. AGNT5
+surfaces the numbers on `response.usage`:
 
 | Field | Meaning |
 |---|---|
@@ -126,8 +144,8 @@ portion. Automatic, no config needed; AGNT5 surfaces the numbers on `response.us
 | `cache_creation_tokens` | Tokens written to cache this call (cache write) |
 | `prompt_tokens` | All input tokens, including reads and writes |
 
-Cache TTL defaults to 5 minutes (resets on hit); a 1-hour TTL is available for longer gaps.
-Minimum cacheable prefix is ~1024-4096 tokens (model-dependent) — short system prompts won't
+On Anthropic the cache TTL defaults to 5 minutes (resets on hit); use `ttl="1h"` for longer
+gaps. Minimum cacheable prefix is ~1024-4096 tokens (model-dependent) — short system prompts won't
 cache.
 
 **To get cache hits**: keep `instructions=`/`system_prompt` text byte-identical across calls
@@ -143,8 +161,4 @@ call.
 
 ## Source
 
-- https://agnt5.com/docs/build/prompts -- `Prompt(id, variables, version)`, `prompts/<id>.mdx`
-  file format and front matter, production resolution order, version selection, runtime LLM
-  overrides (`ctx.runtime.llm`, `ctx.runtime.prompts[...]`), `PromptRef` compatibility note.
-- https://agnt5.com/docs/build/prompt-caching -- prompt/context caching behavior, cache
-  metrics, designing for cache hits, silent invalidators.
+https://agnt5.com/docs/build/prompts · https://agnt5.com/docs/build/prompt-caching

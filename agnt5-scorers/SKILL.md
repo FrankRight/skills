@@ -1,6 +1,6 @@
 ---
 name: agnt5-scorers
-description: Score AGNT5 component outputs - pick built-in deterministic checks (exact_match, json_schema, tool_called, ...), built-in LLM-as-judge presets (correctness, faithfulness, ...), or write a custom @scorer function, including trace assertions for glassbox checks. Use when defining what "correct" means for an experiment or online eval.
+description: Score AGNT5 component outputs - pick built-in deterministic checks (exact_match, json_schema, tool_called, step_efficiency, ...), built-in LLM-as-judge presets (correctness, faithfulness, goal_success, agent_judge), or write and deploy a custom @scorer (ScorerContext/ScorerRequest), including trace assertions for glassbox checks and inspecting scores. Use when defining what "correct" means for an experiment or online eval, writing a custom scorer, or reading scores/evidence for a run.
 ---
 
 # AGNT5 Scorers
@@ -29,7 +29,7 @@ Trace scorers (need `events` on the dataset item — captured when importing fro
 `tool_called` / `tool_not_called`, `tool_sequence` / `tool_sequence_in_order` /
 `tool_sequence_exact` / `tool_sequence_any_order`, `tool_trajectory`, `tool_params_match`,
 `max_tool_calls` / `max_llm_calls`, `max_tokens`, `duration_under`, `no_errors`,
-`state_equals`.
+`state_equals`, `tool_failure_recovered`, `step_efficiency`, `plan_quality`, `plan_adherence`.
 
 ```bash
 agnt5 experiments create --name support-agent-quality \
@@ -44,9 +44,11 @@ Bare name = default behavior; JSON object = name + config.
 
 ## Built-in LLM-as-judge scorers
 
-`llm_judge` (generic — you supply criteria/rubric), `correctness` (matches input + expected),
-`faithfulness` (no hallucination vs. configured context fields). Needs a provider credential
-configured as a project secret (e.g. `OPENAI_API_KEY`).
+`llm_judge` (generic — you supply criteria/rubric, optional `choice_scores`), `correctness`
+(matches input + expected), `faithfulness` (no hallucination vs. configured context fields),
+`goal_success` (did the run achieve the user's goal), `agent_judge` (judges over trace and
+tool-call evidence). Needs a provider credential configured as a project secret (e.g.
+`OPENAI_API_KEY`).
 
 ```bash
 --builtin-scorer correctness \
@@ -67,38 +69,62 @@ scorers = [
 
 Full preset list: `Correctness`, `Faithfulness`, `Helpfulness`, `Coherence`, `Conciseness`,
 `ResponseRelevance`, `InstructionFollowing`, `GoalSuccess`, `Refusal`, `Harmfulness`,
-`Stereotyping`. All accept `model` (default `openai/gpt-4o-mini`), `temperature` (default
-`0.0`), `threshold` (default `0.7`), `include_input`.
+`Stereotyping`, plus the generic `LLMJudge(criteria=...)`. All accept `model` (default
+`openai/gpt-4o-mini`), `temperature` (default `0.0`), `threshold` (default `0.7`), and
+`include_input` (default `True`, except `Faithfulness` and `LLMJudge`, which default to `False`).
 
 ## Custom scorers
 
+A deployable scorer takes `(ctx: ScorerContext, request: ScorerRequest)` and returns a
+`ScorerResult`. Import from the top-level `agnt5` package — `agnt5.eval.scorer` is the legacy
+local-only registry and never deploys.
+
 ```python
-from agnt5.eval import scorer, EvalContext, ScorerResult
+from agnt5 import ScorerContext, ScorerRequest, ScorerResult, scorer
 
 @scorer(name="cites_order_id", description="Reply must cite the order ID from the input")
-def cites_order_id(ctx: EvalContext) -> ScorerResult:
-    order_id = ctx.input.get("order_id", "")
-    cited = order_id in str(ctx.output)
+async def cites_order_id(ctx: ScorerContext, request: ScorerRequest) -> ScorerResult:
+    order_id = (request.input or {}).get("order_id", "")
+    cited = bool(order_id) and order_id in str(request.output)
     return ScorerResult(score=1.0 if cited else 0.0, passed=cited,
-                         explanation=f"Order ID {order_id} {'found' if cited else 'missing'}")
+                        explanation=f"Order ID {order_id} {'found' if cited else 'missing'}")
 ```
 
-`EvalContext` carries `input`, `output`, `expected`, `run_id`, `trace_id`, `events`. Custom
-scorers register and deploy like any component — after deploy, attach by ID:
-`agnt5 experiments create ... --scorer-id <scorer-id>`.
+- `@scorer` kwargs: `name`, `description`, `scope` (`item` default, `run`, `trace`, `span`,
+  `session`, `fleet_run`), `depends_on=["other_scorer"]`. Bare `@scorer` also works.
+- `ScorerRequest` fields: `output`, `expected`, `input`, `trace` (list of trace events),
+  `config`, `peer_scores`, `trace_eval_context`. Helpers: `get_config(key, default)`,
+  `get_tool_calls()`, `get_tool_call_names()`, `get_total_tokens()`, `get_trace_events(type)`.
+- `ScorerResult(score, passed, label=None, explanation=None, metadata=None)`; shortcuts
+  `ScorerResult.pass_result("why")` / `ScorerResult.fail_result("why")`.
+- Compose scorers: declare `depends_on=[...]`, then read earlier results with
+  `ctx.peer_scores("scorer_name")`.
+- Custom scorers register and deploy with your worker like any component. After deploy, attach
+  by ID: `agnt5 experiments create ... --scorer-id <scorer-id>` (repeatable). The AGNT5 MCP
+  tools `create_scorer` / `publish_scorer_version` manage versions.
+
+Test locally without deploying:
+
+```python
+import asyncio
+from agnt5 import ScorerRequest, run_scorer
+
+print(asyncio.run(run_scorer("cites_order_id",
+      ScorerRequest(output="Refund for order 42 issued", input={"order_id": "42"}))))
+```
 
 ## Trace assertions (glassbox testing)
 
-For asserting on *execution behavior* rather than output content — used inside a custom
-scorer or directly in batch-eval code (no CLI scorer name maps to these):
+Assert on *execution behavior* rather than output content, inside a custom scorer (no CLI
+scorer name maps to these):
 
 ```python
-from agnt5.eval import TraceAssertion, trace_scorer, EvalContext, ScorerResult
-from agnt5 import scorer
+from agnt5 import ScorerContext, ScorerRequest, ScorerResult, scorer
+from agnt5.eval import ScorerInput, TraceAssertion, trace_scorer
 
 @scorer(name="efficiency_check", scope="trace")
-def efficiency_check(ctx: EvalContext) -> ScorerResult:
-    result = trace_scorer(ctx.events, [
+async def efficiency_check(ctx: ScorerContext, request: ScorerRequest) -> ScorerResult:
+    result = trace_scorer(ScorerInput(output=request.output, trace=request.trace or []), [
         TraceAssertion.max_tokens(2000),
         TraceAssertion.max_lm_calls(4),
         TraceAssertion.no_errors(),
@@ -123,15 +149,8 @@ agnt5 scores evidence <score-id> --include scorer_input,scorer_output,evidence
 
 Filters on `scores list`: `--run-id`, `--run-item-id`, `--scorer-id`, `--scorer-version-id`,
 `--subject-type`, `--subject-id`, `--session-id`, `--root-run-id`, `--component-name`,
-`--component-type`, `--since`, `--until`.
-
-Scorer error types: `input_error`, `config_error`, `provider_error`, `auth_error`,
-`artifact_error`, `timeout_error` (built-ins); `scorer_not_found` (custom only).
+`--component-type`, `--journal-id`, `--span-id`, `--since`, `--until`.
 
 ## Source
 
-- https://agnt5.com/docs/improve/scorers -- the three scorer classes (built-in deterministic, built-in
-  LLM-as-judge, custom), full built-in scorer name tables, SDK evaluator presets
-  (`Correctness`, `Faithfulness`, `Helpfulness`, ...), `@scorer` decorator and
-  `EvalContext`/`ScorerResult`, `TraceAssertion`/`trace_scorer()` for glassbox checks,
-  inspecting scores via `agnt5 scores list/evidence`.
+https://agnt5.com/docs/improve/scorers
