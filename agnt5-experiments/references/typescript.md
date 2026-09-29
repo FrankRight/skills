@@ -126,14 +126,14 @@ sequence, correlationId }], runId }`) if you need to build dataset `events` your
 
 ## TypeScript pitfalls
 
-| Symptom | Cause | Fix | Ticket |
-|---|---|---|---|
-| `ECONNREFUSED 127.0.0.1:34181` in CI | default gateway is localhost | set `AGNT5_GATEWAY_URL` / `gatewayUrl` | — |
-| Eval hits the wrong deployment | ambient `AGNT5_DEPLOYMENT_ID` ignored for execution | pass `deploymentId` in options | — |
-| `timeout: 60` fails everything instantly | milliseconds, not seconds | `timeout: 60_000` | — |
-| Judge presets error with "provider prefix" | bare model name | `model: 'openai/gpt-4o-mini'` | — |
-| Run status shows `EXECUTION_ERROR` for every failure | worker collapses error codes | read `item.error` text / worker logs | AGNT5-1358 |
-| `agnt5 run <function>` exits 1 during a smoke test although the run later passes | CLI prints first failed attempt | check `agnt5 inspect runs describe` | AGNT5-1372 |
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ECONNREFUSED 127.0.0.1:34181` in CI | default gateway is localhost | set `AGNT5_GATEWAY_URL` / `gatewayUrl` |
+| Eval hits the wrong deployment | ambient `AGNT5_DEPLOYMENT_ID` ignored for execution | pass `deploymentId` in options |
+| `timeout: 60` fails everything instantly | milliseconds, not seconds | `timeout: 60_000` |
+| Judge presets error with "provider prefix" | bare model name | `model: 'openai/gpt-4o-mini'` |
+| Run status shows `EXECUTION_ERROR` for every failure | worker collapses error codes | read `item.error` text / worker logs |
+| `agnt5 run <function>` exits 1 during a smoke test although the run later passes | CLI prints first failed attempt | check `agnt5 inspect runs describe` |
 
 ## Source
 

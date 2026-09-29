@@ -70,7 +70,7 @@ workflows; the `FunctionContext` / `WorkflowContext` split does not exist.
 
 `ctx.step(name, () => ..., { key })` is the only checkpointed call. A direct `myFn(ctx, input)`
 inside a workflow is **not** checkpointed and runs again on every replay (HITL resume, durable
-sleep, crash recovery) — AGNT5-1373. The product docs page that says `fn(...).run(...)` calls
+sleep, crash recovery). The product docs page that says `fn(...).run(...)` calls
 checkpoint automatically is wrong for 0.10.5.
 
 | Call style | Checkpointed | Use when |
@@ -82,7 +82,7 @@ checkpoint automatically is wrong for 0.10.5.
   `key` per call, or replay matches the wrong checkpoint.
 - The callback must return JSON-serialisable data (`undefined` inside the result is dropped).
 - `fn().retry()` is applied when the function is the top-level component of a run, but **not**
-  when it runs inside `ctx.step` (AGNT5-1372). Retry inside the step yourself:
+  when it runs inside `ctx.step`. Retry inside the step yourself:
 
 ```typescript
 import { executeWithRetry } from '@agnt5/sdk';
@@ -134,7 +134,7 @@ for (let i = 0; i < docIds.length; i += 10) {
 `parallel([...])` and `gather({...})` from `@agnt5/sdk` are thin wrappers over `Promise.all`;
 they add no checkpointing. `batchExecute`, `fanOut`, `race`, `withTimeout`, `retryWorkflow`
 and `executeChildWorkflow` run child *workflows* in-process on the parent's `ctx` (no separate
-run, AGNT5-1359) and `withTimeout` leaks its timer; prefer `ctx.step` + `Promise.all`.
+run) and `withTimeout` leaks its timer; prefer `ctx.step` + `Promise.all`.
 `client.batch()` is a gateway call from outside a workflow, not in-workflow fan-out.
 
 ## Durable sleep
@@ -203,7 +203,7 @@ import { Worker } from '@agnt5/sdk';
 import './src/functions.js';
 import './src/workflows.js';
 
-process.on('unhandledRejection', (err) => console.error('unhandledRejection', err)); // AGNT5-1352
+process.on('unhandledRejection', (err) => console.error('unhandledRejection', err)); // one stray rejection must not exit the worker
 
 const worker = new Worker('my-service', { serviceVersion: '0.1.0' });
 await worker.run();
@@ -217,19 +217,19 @@ await worker.run();
 - `retries=3` / `backoff="exponential"` shorthands (always pass objects)
 - Sync handlers wrapped in a thread pool (every handler is async or returns a value directly)
 - `ctx._is_replay`
-- Trace spans for any run (AGNT5-1320): use `ctx.logger` and events instead
+- Trace spans for any run: use `ctx.logger` and events instead
 
 ## TypeScript pitfalls
 
-| Symptom | Cause | Fix | Ticket |
-|---|---|---|---|
-| A charge/email repeats after a HITL resume or sleep | direct `fn(ctx, ...)` call in the workflow body | wrap in `ctx.step(name, ..., { key })` | AGNT5-1373 |
-| `.retry()` ignored inside a workflow | retry only applies to top-level function runs | `executeWithRetry` inside the step | AGNT5-1372 |
-| `agnt5 run <function>` exits 1 while the run later succeeds | CLI prints the first failed attempt; platform keeps retrying | check `agnt5 inspect runs describe <runId>` | AGNT5-1372 |
-| Worker process exits mid-run | unhandled promise rejection | `process.on('unhandledRejection', ...)` in `app.ts` | AGNT5-1352 |
-| Every failure shows `EXECUTION_ERROR` | worker maps all errors to one code | log `err.name` / `err.constructor.name` yourself | AGNT5-1358 |
-| `Promise.all` of steps replays the wrong values | same step name, no key | give each call a `key` | — |
-| Studio shows no input fields | TS types are erased | `inputSchema` on `fn()` and `workflow()` | — |
+| Symptom | Cause | Fix |
+|---|---|---|
+| A charge/email repeats after a HITL resume or sleep | direct `fn(ctx, ...)` call in the workflow body | wrap in `ctx.step(name, ..., { key })` |
+| `.retry()` ignored inside a workflow | retry only applies to top-level function runs | `executeWithRetry` inside the step |
+| `agnt5 run <function>` exits 1 while the run later succeeds | CLI prints the first failed attempt; platform keeps retrying | check `agnt5 inspect runs describe <runId>` |
+| Worker process exits mid-run | unhandled promise rejection | `process.on('unhandledRejection', ...)` in `app.ts` |
+| Every failure shows `EXECUTION_ERROR` | worker maps all errors to one code | log `err.name` / `err.constructor.name` yourself |
+| `Promise.all` of steps replays the wrong values | same step name, no key | give each call a `key` |
+| Studio shows no input fields | TS types are erased | `inputSchema` on `fn()` and `workflow()` |
 
 ## Source
 

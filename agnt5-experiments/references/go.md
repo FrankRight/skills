@@ -107,7 +107,7 @@ context-based).
 - `ComponentType` left empty routes the eval to `/v1/functions/...`; set it for agents and
   workflows.
 - Raw `EvalScorerSpec` judge configs need bare model names; presets accept `provider/model`
-  (AGNT5-1374).
+ .
 - Run/stream calls wait up to 5 minutes by default; for long-running components set
   `Timeout` (it becomes `WithRunTimeout`, the HTTP deadline for that item) and lower
   concurrency.

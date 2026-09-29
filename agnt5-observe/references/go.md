@@ -10,7 +10,7 @@ what a Go worker emits and how to control it.
 |---|---|
 | `agnt5.Step` / `StepWithKey` | `workflow.step.<name>` span (a durable STEP activation on the current runtime) |
 | `agnt5.Task` / `TaskWithKey` | same, plus `function.started/completed` → its own Function node in Studio |
-| `agent.Run` | `agent.*` iteration events, one lm span per model call (nested under the iteration since 0.10.3, AGNT5-1243), `tool_call.*` per tool |
+| `agent.Run` | `agent.*` iteration events, one lm span per model call (nested under the iteration since 0.10.3), `tool_call.*` per tool |
 | `ctx.Generate` | one lm span / MODEL activation (`lm.completed` / `lm.failed` are the event names trace scorers match) |
 | `ctx.AskUser` / `ctx.Sleep` | `workflow.step.paused`, `approval.requested`, `workflow.paused` / timer activation |
 | `load_skill` | `skill.loaded` (`skill_name`, `instructions_length`, `resources_materialized`) |

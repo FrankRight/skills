@@ -89,7 +89,7 @@ await lm.stream(request, (chunk) => {
 ```
 
 `stream()` resolves when the stream ends; there is no async iterator and no cancellation
-(`AbortSignal` is ignored, AGNT5-1356).
+(`AbortSignal` is ignored).
 
 ## Caching
 

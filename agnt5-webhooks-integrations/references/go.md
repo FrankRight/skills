@@ -11,7 +11,7 @@ level, which is wrong — the envelope is nested).
 | `@workflow(triggers=[webhook("sentry", event="issue.created")])` | `agnt5.RegisterWorkflow(worker, name, handler, agnt5.WithTriggers(agnt5.WebhookTrigger("sentry", "issue.created")))` |
 | `event("user.signed_up")` | `agnt5.EventTrigger("user.signed_up")` |
 | `trigger_id=` | `TriggerID` field on the returned `agnt5.TriggerSpec` |
-| `filter_expression=`, `input_mapping=`, `batch_window_ms=`, `delay_expression=` | `FilterExpression`, `InputMapping`, `BatchWindowMS`, `DelayExpression` exist on `TriggerSpec` but **leave them zero**: the gateway skips any trigger that sets one, so the workflow never starts (AGNT5-1376) |
+| `filter_expression=`, `input_mapping=`, `batch_window_ms=`, `delay_expression=` | `FilterExpression`, `InputMapping`, `BatchWindowMS`, `DelayExpression` exist on `TriggerSpec` but **leave them zero**: the gateway skips any trigger that sets one, so the workflow never starts |
 | `ChatBot(agent, adapters=[SlackConfig(...)])` | none — `agnt5.NewChatBot` gives session memory only; no Slack/Discord/Teams/Telegram adapters |
 | `Client().run(...)` / `.submit(...)` | `client.Run(...)` / `client.Submit(...)` (full client: `agnt5-client`) |
 
@@ -20,7 +20,7 @@ level, which is wrong — the envelope is nested).
 ```go
 issues := agnt5.WebhookTrigger("sentry", "issue.created") // dispatches as "sentry.issue.created"
 // Do not set issues.FilterExpression / InputMapping / BatchWindowMS / DelayExpression:
-// the gateway skips a trigger that has any of them (AGNT5-1376). Filter inside the handler.
+// the gateway skips a trigger that has any of them. Filter inside the handler.
 
 must(agnt5.RegisterWorkflow(worker, "triage_issue", TriageIssue, agnt5.WithTriggers(issues)))
 must(agnt5.RegisterWorkflow(worker, "welcome", Welcome, agnt5.WithTriggers(agnt5.EventTrigger("user.signed_up"))))

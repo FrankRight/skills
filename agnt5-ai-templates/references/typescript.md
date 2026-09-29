@@ -37,8 +37,7 @@ of `agnt5-workflows`, `agnt5-agents-tools` and `agnt5-human-in-the-loop`.
 ```
 
 `tsx` lives in `dependencies`, not `devDependencies`: the managed worker installs with
-`npm install --production` and would otherwise download an unpinned `tsx` on every cold start
-(AGNT5-1375).
+`npm install --production` and would otherwise download an unpinned `tsx` on every cold start.
 
 ## `tsconfig.json`
 
@@ -93,7 +92,7 @@ export const myAgent = new Agent({
     name: 'AgentName',
     model: LM.openai({ apiKey: process.env.OPENAI_API_KEY }),
     modelName: 'openai/gpt-4o-mini',
-    // temperature: 1,   // required for openai/gpt-6-* models: the SDK otherwise sends 0.7 and OpenAI returns 400 (AGNT5-1302)
+    // temperature: 1,   // required for openai/gpt-6-* models: the SDK otherwise sends 0.7 and OpenAI returns 400
     instructions: 'You are <AgentName>, <one-line role>...',
     tools: [myTool],     // omit entirely if no tools — never pass tools: []
 });
@@ -185,7 +184,7 @@ export const myWorkflow = workflow(
 
 Every function call inside a workflow goes through `ctx.step(name, () => ..., { key })`. A
 bare `stage1(ctx, ...)` is not checkpointed and re-runs on every replay (HITL resume, durable
-sleep, crash recovery) — AGNT5-1373. Concurrent steps:
+sleep, crash recovery). Concurrent steps:
 `await Promise.all(items.map((item) => ctx.step('process', () => process(ctx, { item }), { key: item.id })))`
 — the `key` keeps replay matching the right checkpoint. There is no `ctx.batch`/`ctx.map`.
 
@@ -200,7 +199,7 @@ import './src/workflows.js';
 import { myAgent } from './src/agents.js';
 
 process.on('unhandledRejection', (reason) => {
-    console.error('unhandledRejection', reason);   // otherwise the worker process dies mid-run (AGNT5-1352)
+    console.error('unhandledRejection', reason);   // otherwise the worker process dies mid-run
 });
 
 async function main() {

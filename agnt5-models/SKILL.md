@@ -99,13 +99,13 @@ Per-language signatures, tool calling, structured output, streaming, and caching
 - **gpt-6 family accepts only `temperature` 1.** Python: `lm.generate` sends nothing unless
   you pass it, but `Agent(...)` defaults to `temperature=0.7` - pass `temperature=None`.
   TypeScript: set `temperature: 1` (or omit it in `config`). Go: stay on non-reasoning models
-  until AGNT5-1285 is decided (related: AGNT5-1301, 1302, 1303, 1323, 1325, 1327). Built-in
+  for now. Built-in
   judge scorers default to `temperature` 0.0, so a gpt-6 judge scores everything 0 - keep
-  judges on another model (`agnt5-scorers`, AGNT5-1374).
+  judges on another model (`agnt5-scorers`).
 - **Python `reasoning_effort` is never sent** - the Rust binding has no such parameter, so the
-  value is dropped silently (AGNT5-1370). Use the provider default or TypeScript.
+  value is dropped silently. Use the provider default or TypeScript.
 - **Python `response.structured_output` / `.parsed` / `.object` are always `None`**
-  (AGNT5-1371). The schema still goes to the provider; parse the text:
+ . The schema still goes to the provider; parse the text:
   `Model.model_validate_json(response.text)` or `json.loads(response.text)`.
 - **Python Pydantic `response_format` under OpenAI strict mode** needs
   `additionalProperties: false` on every object: add `model_config = ConfigDict(extra="forbid")`
@@ -114,7 +114,7 @@ Per-language signatures, tool calling, structured output, streaming, and caching
 - **TypeScript `ReasoningEffort`** is `'minimal' | 'medium' | 'high'`; `'low'` and `'none'`
   work at runtime with a cast (`'low' as ReasoningEffort`); `'minimal'` returns 400 on
   `gpt-6-luna`.
-- **TypeScript `generate`/`stream` ignore `AbortSignal`** (AGNT5-1356): `ctx.signal` does not
+- **TypeScript `generate`/`stream` ignore `AbortSignal`**: `ctx.signal` does not
   cancel an in-flight model call; bound work with `maxOutputTokens` and your own timeouts.
 - **Go Anthropic sends `max_tokens: 1024` unless `MaxTokens` is set** - set it for long
   outputs. Go has no structured-output, reasoning, or built-in-tool fields.

@@ -197,7 +197,7 @@ options, `Worker(auto_register=True)`.
 ## Go pitfalls for this skill
 
 - `WithRetry` is registration metadata used when the runtime invokes the component. In Python and
-  TypeScript retries are not applied to a function called inside a workflow step (AGNT5-1372);
+  TypeScript retries are not applied to a function called inside a workflow step;
   the Go step-level behaviour was not tested — retry inside the step body if it matters.
 - No timeout option: wrap external calls with `context.WithTimeout(ctx, d)`; the run's own
   deadline still applies through `ctx.Done()`.

@@ -39,7 +39,7 @@ Internal events use `event("user.signed_up")` the same way. Both `webhook()` and
 also accept `filter_expression=`, `input_mapping=`, `batch_window_ms=`, `delay_expression=`
 and `trigger_id=`. **Leave the first four unset**: the current gateway skips any trigger that
 sets one of them as unsupported (counted in the event's `skipped_unsupported_count`; the
-workflow does not start; AGNT5-1376), and their expression syntax is undocumented. Filter
+workflow does not start), and their expression syntax is undocumented. Filter
 inside the workflow instead.
 
 ## What the workflow receives

@@ -240,9 +240,9 @@ agents in `handoffs`, `confirmation=`/`durable=` tool flags.
 - Missing `WithToolSchema`: the model sees a parameterless tool and calls it with `{}`.
 - `args["n"].(int)` panics/misses — JSON numbers are `float64`.
 - Anthropic agents truncate at 1024 output tokens (no agent-level `MaxTokens`); wrap the model.
-- gpt-6 tool-using agents fail over Chat Completions (`reasoning_effort` cannot be set,
-  AGNT5-1325); `Temperature`/`MaxTokens` to reasoning models are rejected (AGNT5-1303
-  unmerged); pending product decision AGNT5-1285 — use `gpt-4o-mini`/`gpt-4.1-mini`, or an
-  `OpenAIConfig.HTTPClient` transport that rewrites the request body.
+- gpt-6 tool-using agents fail over Chat Completions (`reasoning_effort` cannot be set), and
+  `Temperature`/`MaxTokens` sent to reasoning models are rejected. Use
+  `gpt-4o-mini`/`gpt-4.1-mini`, or an `OpenAIConfig.HTTPClient` transport that rewrites the
+  request body.
 - `ErrAgentMaxTurnsExceeded` discards the transcript; `WithAgentMaxTurns(0)` means 10, not 0.
 - Session memory without a session ID is per-run.

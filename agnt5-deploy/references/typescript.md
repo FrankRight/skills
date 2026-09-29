@@ -11,8 +11,8 @@ what the managed Node worker actually runs and the checks a TypeScript project n
 - The pod runs `npm install --production` inside the bundled project, then the `agnt5.yaml`
   `worker.command` (`npx tsx app.ts`).
 - `--production` skips `devDependencies`. With `tsx` in `devDependencies`, `npx tsx` downloads
-  an unpinned `tsx` on every cold start (slow, and a new `tsx` release can break startup) —
-  AGNT5-1375. Move it to `dependencies`:
+  an unpinned `tsx` on every cold start (slow, and a new `tsx` release can break startup).
+  Move it to `dependencies`:
 
 ```json
 {
@@ -35,8 +35,8 @@ what the managed Node worker actually runs and the checks a TypeScript project n
 
 ```bash
 npx tsc --noEmit                      # tsx never type-checks
-grep -n '"tsx"' package.json          # must be under dependencies (AGNT5-1375)
-grep -n unhandledRejection app.ts     # process.on handler present (AGNT5-1352)
+grep -n '"tsx"' package.json          # must be under dependencies
+grep -n unhandledRejection app.ts     # process.on handler present
 grep -n registerAgents app.ts         # every Agent registered
 agnt5 secrets list                    # OPENAI_API_KEY etc. present for the target env
 agnt5 deploy --dry-run
@@ -60,8 +60,8 @@ Reading logs after deploy:
   (`agnt5 inspect logs -r <runId>`) and stdout.
 - Plain `console.log` / `console.error` reach only the deployment logs
   (`agnt5 logs <deployment-id> --follow`), never a run's logs.
-- There are no trace spans for TypeScript runs (AGNT5-1320) and every failure is reported as
-  `EXECUTION_ERROR` (AGNT5-1358), so log `err.name` and `err.message` yourself before
+- There are no trace spans for TypeScript runs and every failure is reported as
+  `EXECUTION_ERROR`, so log `err.name` and `err.message` yourself before
   rethrowing.
 
 ## Calling the deployed worker from your app
@@ -79,14 +79,14 @@ See `agnt5-client` for the full surface.
 
 ## TypeScript pitfalls
 
-| Symptom | Cause | Fix | Ticket |
-|---|---|---|---|
-| Slow cold start, or startup fails with an `npx` download error | `tsx` in devDependencies, installed with `--production` | move `tsx` to `dependencies` | AGNT5-1375 |
-| Deploy succeeds, worker restarts in a loop | type error / bad import that `tsx` only hits at runtime | `npx tsc --noEmit` before deploying | — |
-| Agents work locally, missing after deploy | registered in a dev-only code path | `worker.registerAgents([...])` unconditionally | — |
-| Pod dies after one failed run | unhandled rejection | `process.on('unhandledRejection', ...)` | AGNT5-1352 |
-| Backend calls fail with `ECONNREFUSED 127.0.0.1:34181` | `Client` default gateway | set `AGNT5_GATEWAY_URL` | — |
-| Sandbox provider ignored in the deployed worker | `AGNT5_SANDBOX_PROVIDER` is not read by the TS SDK | `new Sandbox({ provider: 'e2b' })` + the provider's key as a secret | — |
+| Symptom | Cause | Fix |
+|---|---|---|
+| Slow cold start, or startup fails with an `npx` download error | `tsx` in devDependencies, installed with `--production` | move `tsx` to `dependencies` |
+| Deploy succeeds, worker restarts in a loop | type error / bad import that `tsx` only hits at runtime | `npx tsc --noEmit` before deploying |
+| Agents work locally, missing after deploy | registered in a dev-only code path | `worker.registerAgents([...])` unconditionally |
+| Pod dies after one failed run | unhandled rejection | `process.on('unhandledRejection', ...)` |
+| Backend calls fail with `ECONNREFUSED 127.0.0.1:34181` | `Client` default gateway | set `AGNT5_GATEWAY_URL` |
+| Sandbox provider ignored in the deployed worker | `AGNT5_SANDBOX_PROVIDER` is not read by the TS SDK | `new Sandbox({ provider: 'e2b' })` + the provider's key as a secret |
 
 ## Source
 

@@ -26,7 +26,7 @@ export const researcher = new Agent({
 | `handoffs` | no | `Agent` or `handoff(...)` entries |
 | `sandbox` | no | `new Sandbox({...})` |
 | `maxIterations` | no | Default `10` |
-| `temperature` | no | Default `0.7`, sent explicitly. Omitted automatically only for `openai/gpt-5*`, `o1*`, `o3*`, `o4*`. For `gpt-6*` pass `temperature: 1` (AGNT5-1302) |
+| `temperature` | no | Default `0.7`, sent explicitly. Omitted automatically only for `openai/gpt-5*`, `o1*`, `o3*`, `o4*`. For `gpt-6*` pass `temperature: 1` |
 | `cache` | no | `true` or `{ ttl, key, retention, resource }` — see `agnt5-prompts` |
 | `callbacks` | no | `{ beforeAgent, afterAgent, beforeModel, afterModel, beforeTool, afterTool }` |
 | `skills` / `skillsDir` / `agentsMd` | no | See `agnt5-agent-skills` |
@@ -61,7 +61,7 @@ for await (const item of agent.stream(task, ctx)) {
 
 Inside a workflow, pass `ctx` as the second positional argument: `agent.run(task, ctx)`. Wrap
 the call in `ctx.step('agent', () => agent.run(task, ctx))` so the finished answer replays
-instead of re-running the model (AGNT5-1373). Do not put an agent that carries
+instead of re-running the model. Do not put an agent that carries
 `AskUserTool`/`RequestApprovalTool` inside a step: its pause must propagate to the workflow.
 Any `beforeModel` or `afterModel` callback turns token streaming off (`lm.message.delta` stops).
 
@@ -175,7 +175,7 @@ result.handoffTo;   // 'billing'
 Defaults: description = target's `instructions`, `toolName` = `transfer_to_<name>`,
 `passFullHistory` = `true`, `joinPolicy` = `ChildJoinPolicy.Required`. Handoffs can only be set
 in the constructor and there is no depth limit — two agents that hand off to each other loop
-until `maxIterations` on each side (AGNT5-1357). Passing agents directly
+until `maxIterations` on each side. Passing agents directly
 (`handoffs: [billingAgent]`) uses the defaults.
 
 ## Callbacks (guardrails, caching, redaction)
@@ -235,21 +235,21 @@ across runs.
 - `Sandbox.run_command` / `run_command_stream`, `AGNT5_SANDBOX_PROVIDER`
 - `async with mcp:` (use `await using` or `try/finally`)
 - Tool schema inference from types or docstrings
-- Trace spans for tool/model calls (AGNT5-1320) — use `ctx.logger` and the event stream
+- Trace spans for tool/model calls — use `ctx.logger` and the event stream
 
 ## TypeScript pitfalls
 
-| Symptom | Cause | Fix | Ticket |
-|---|---|---|---|
-| OpenAI 400 "temperature not supported" on gpt-6 | agent sends `0.7` by default | `temperature: 1` on `Agent` (or `config.temperature` on `LM.generate`) | AGNT5-1302 / AGNT5-1285 |
-| `result.output` is a tool's JSON after a long run | `maxIterations` hit: output = last message content | raise `maxIterations`, or detect `toolCalls.length` and re-prompt | AGNT5-1353 |
-| Model never fills tool arguments | no `inputSchema` | always pass `inputSchema` | — |
-| Coordinator calls `ask_researcher` and fails | agent-as-tool is named `researcher` | use `<agent.name>` in instructions | — |
-| No `lm.message.delta` events | `beforeModel`/`afterModel` disables streaming | drop the callback or consume `agent.completed` | — |
-| `ConfigurationError: Provider ... does not match model prefix` | `modelName` prefix vs `LM` provider | match them (`LM.anthropic()` + `anthropic/...`) | — |
-| Agent missing from `agnt5 components` | agents are not auto-registered | `worker.registerAgents([agent])` | — |
-| Two agents hand off forever | no handoff depth limit | avoid mutual handoffs; lower `maxIterations` | AGNT5-1357 |
-| `agent.run` re-runs on HITL resume | not inside `ctx.step` | wrap in `ctx.step` (unless it holds HITL tools) | AGNT5-1373 |
+| Symptom | Cause | Fix |
+|---|---|---|
+| OpenAI 400 "temperature not supported" on gpt-6 | agent sends `0.7` by default | `temperature: 1` on `Agent` (or `config.temperature` on `LM.generate`) |
+| `result.output` is a tool's JSON after a long run | `maxIterations` hit: output = last message content | raise `maxIterations`, or detect `toolCalls.length` and re-prompt |
+| Model never fills tool arguments | no `inputSchema` | always pass `inputSchema` |
+| Coordinator calls `ask_researcher` and fails | agent-as-tool is named `researcher` | use `<agent.name>` in instructions |
+| No `lm.message.delta` events | `beforeModel`/`afterModel` disables streaming | drop the callback or consume `agent.completed` |
+| `ConfigurationError: Provider ... does not match model prefix` | `modelName` prefix vs `LM` provider | match them (`LM.anthropic()` + `anthropic/...`) |
+| Agent missing from `agnt5 components` | agents are not auto-registered | `worker.registerAgents([agent])` |
+| Two agents hand off forever | no handoff depth limit | avoid mutual handoffs; lower `maxIterations` |
+| `agent.run` re-runs on HITL resume | not inside `ctx.step` | wrap in `ctx.step` (unless it holds HITL tools) |
 
 ## Source
 

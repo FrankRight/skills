@@ -31,7 +31,7 @@ export const welcome = workflow('welcome', async (ctx: Context, input: Triggered
 
 **Leave `filterExpression`, `inputMapping`, `batchWindowMs` and `delayExpression` unset.** The
 types accept them, but the gateway skips any trigger that sets one, so the workflow never
-starts and nothing reports why (AGNT5-1376). Filter and reshape inside the workflow instead.
+starts and nothing reports why. Filter and reshape inside the workflow instead.
 
 ## What the workflow receives
 
@@ -70,7 +70,7 @@ function webhookEnvelope(input: TriggeredRun | WebhookEnvelope): WebhookEnvelope
 Verified against the gateway's event dispatch and a live run; the docs' `event.body` at the
 top level is wrong. Key side effects off `event.data.event_type` +
 `event.data.idempotency_key` (or `event.id`), and put them in `ctx.step` — delivery is
-at-least-once and replays re-run bare code (AGNT5-1373).
+at-least-once and replays re-run bare code.
 
 ## Chat bots (Slack, Discord, Teams, Telegram)
 
@@ -155,14 +155,14 @@ await client.workflow('onboarding_workflow').run({ userEmail }, { idempotencyKey
 
 ## TypeScript pitfalls
 
-| Symptom | Cause | Fix | Ticket |
-|---|---|---|---|
-| `JSON.parse(input.body)` throws `undefined` | body lives at `input.event.data.body` | use `webhookEnvelope(input)` | — |
-| Side effects run twice per delivery | at-least-once delivery + bare calls replay | `ctx.step` keyed by `idempotency_key` | AGNT5-1373 |
-| Slack retries start duplicate runs | Slack has no delivery id | dedupe on the Slack `event_id` inside `body` | — |
-| Bot never answers | bare agent registered, or bot module not imported | `worker.registerAgents([bot])` | — |
-| A handler rejection kills the worker | unhandled promise rejection | `process.on('unhandledRejection', ...)` + try/catch in handlers | AGNT5-1352 |
-| Backend `Client` calls `localhost:34181` in production | default gateway URL | set `AGNT5_GATEWAY_URL` / `gatewayUrl` | — |
+| Symptom | Cause | Fix |
+|---|---|---|
+| `JSON.parse(input.body)` throws `undefined` | body lives at `input.event.data.body` | use `webhookEnvelope(input)` |
+| Side effects run twice per delivery | at-least-once delivery + bare calls replay | `ctx.step` keyed by `idempotency_key` |
+| Slack retries start duplicate runs | Slack has no delivery id | dedupe on the Slack `event_id` inside `body` |
+| Bot never answers | bare agent registered, or bot module not imported | `worker.registerAgents([bot])` |
+| A handler rejection kills the worker | unhandled promise rejection | `process.on('unhandledRejection', ...)` + try/catch in handlers |
+| Backend `Client` calls `localhost:34181` in production | default gateway URL | set `AGNT5_GATEWAY_URL` / `gatewayUrl` |
 
 ## Source
 

@@ -111,7 +111,7 @@ directly. Assertions: `maxTokens(n)`, `maxLmCalls(n)`, `noErrors()`, `durationUn
 is not the deployable handler signature.
 
 Trace scorers read journal events (`tool_call.*`, `lm.*`, `workflow.step.*`), which TypeScript
-workers emit; the missing OpenTelemetry spans (AGNT5-1320) affect `agnt5 inspect trace`, not
+workers emit; the missing OpenTelemetry spans affect `agnt5 inspect trace`, not
 these events.
 
 ## Inspect scores
@@ -128,14 +128,14 @@ Identical CLI (`agnt5 scores list ...`, `agnt5 scores evidence <score-id> ...`).
 
 ## TypeScript pitfalls
 
-| Symptom | Cause | Fix | Ticket |
-|---|---|---|---|
-| Scorer not listed after deploy | module never imported by `app.ts` | `import './src/scorers.js'` | — |
-| `request.peerScores` is `undefined` | field is `peer_scores` | use `request.peer_scores` | — |
-| Judge preset ignores the input | `includeInput` defaults to `false` | pass `{ includeInput: true }` | — |
-| Handler returns a plain object and Studio shows no label | works structurally, but `label`/`metadata` easy to drop | return `new ScorerResult({...})` | — |
-| `trace` empty for an item | dataset item has no `events` | import items from runs (`agnt5 datasets add-run`) | — |
-| `llmJudge` fails with "Model must include provider prefix" | bare `model: 'gpt-4o-mini'` in config | use `openai/gpt-4o-mini` | — |
+| Symptom | Cause | Fix |
+|---|---|---|
+| Scorer not listed after deploy | module never imported by `app.ts` | `import './src/scorers.js'` |
+| `request.peerScores` is `undefined` | field is `peer_scores` | use `request.peer_scores` |
+| Judge preset ignores the input | `includeInput` defaults to `false` | pass `{ includeInput: true }` |
+| Handler returns a plain object and Studio shows no label | works structurally, but `label`/`metadata` easy to drop | return `new ScorerResult({...})` |
+| `trace` empty for an item | dataset item has no `events` | import items from runs (`agnt5 datasets add-run`) |
+| `llmJudge` fails with "Model must include provider prefix" | bare `model: 'gpt-4o-mini'` in config | use `openai/gpt-4o-mini` |
 
 ## Source
 

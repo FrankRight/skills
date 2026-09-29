@@ -6,7 +6,7 @@ different for a TypeScript worker and the code-side logging, span and capture AP
 
 ## Traces: no spans for TypeScript runs yet
 
-TypeScript workers do not export trace spans (AGNT5-1320), so for a TS run
+TypeScript workers do not export trace spans, so for a TS run
 `agnt5 inspect trace -r <runId>` and Studio's Trace tab have no span tree to show. Use instead:
 
 ```bash
@@ -18,8 +18,8 @@ The run's *journal events* (`workflow.step.*`, `function.*`, `agent.*`, `lm.*`,
 `tool_call.*`) are still recorded and drive the Studio run timeline, scorers and
 `client.getEvents(runId)` (`{ events: [{ eventType, data, sequence, correlationId }] }`).
 
-Every failed run is reported as `EXECUTION_ERROR` regardless of the thrown error
-(AGNT5-1358). Log the real type before rethrowing:
+Every failed run is reported as `EXECUTION_ERROR` regardless of the thrown error.
+Log the real type before rethrowing:
 
 ```typescript
 try {
@@ -63,7 +63,8 @@ getCurrentSpanInfo();   // { traceId, spanId } | undefined
 
 These stamp `traceId`/`spanId` onto log records emitted inside them (that correlation is what
 `agnt5 inspect logs` shows). Whether the span itself is exported depends on the native
-binding; while AGNT5-1320 is open, treat them as log correlation, not as trace structure.
+binding; until TypeScript runs record spans, treat them as log correlation, not as trace
+structure.
 
 ## Automatic capture of OpenAI / OpenAI Agents SDK / Vercel AI SDK / Google ADK calls
 
@@ -103,13 +104,13 @@ Identical to the SKILL.md (Studio Analytics/Metrics, MCP tools, `--output json`)
 
 ## TypeScript pitfalls
 
-| Symptom | Cause | Fix | Ticket |
-|---|---|---|---|
-| Empty trace for a TS run | no span export | logs + journal events | AGNT5-1320 |
-| Error code always `EXECUTION_ERROR` | worker collapses codes | log `err.name` yourself | AGNT5-1358 |
-| `console.log` lines missing from `agnt5 inspect logs -r` | console is stdout only | use `ctx.logger` / `getLogger` | — |
-| `AGNT5_CAPTURE_CONTENT_MODE=redacted` has no effect | Python-only variable | `AGNT5_LLM_CAPTURE_CONTENT=off` | — |
-| OpenAI calls from a script are not captured | no ambient component context | run them inside a `fn()` / workflow | — |
+| Symptom | Cause | Fix |
+|---|---|---|
+| Empty trace for a TS run | no span export | logs + journal events |
+| Error code always `EXECUTION_ERROR` | worker collapses codes | log `err.name` yourself |
+| `console.log` lines missing from `agnt5 inspect logs -r` | console is stdout only | use `ctx.logger` / `getLogger` |
+| `AGNT5_CAPTURE_CONTENT_MODE=redacted` has no effect | Python-only variable | `AGNT5_LLM_CAPTURE_CONTENT=off` |
+| OpenAI calls from a script are not captured | no ambient component context | run them inside a `fn()` / workflow |
 
 ## Source
 
