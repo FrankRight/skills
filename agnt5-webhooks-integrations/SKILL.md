@@ -5,7 +5,7 @@ description: Connect AGNT5 to the outside world - trigger workflows from Standar
 
 # AGNT5 Webhooks and Integrations
 
-> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support.
 
 A webhook lets an external system start a workflow by POSTing an event to AGNT5. The gateway
 verifies the signature, turns the delivery into a durable event, and starts every workflow

@@ -142,7 +142,7 @@ inspect what happened: `agnt5 inspect runs ls`, `agnt5 inspect trace -r <run-id>
 | `TypeError: Function 'x' requires FunctionContext as first argument` | Inside a workflow call it through `ctx.step(x, ...)` (`agnt5-workflows`) |
 | `ConfigurationError: Tool function 'x' first parameter must be 'ctx: Context'` | Annotate the first tool parameter exactly `ctx: Context` (`from agnt5.context import Context`) |
 | `TypeError: got an unexpected keyword argument 'deployment_id'` on a triggered workflow | Declare it `async def h(ctx, event: dict, **_)` (`agnt5-webhooks-integrations`) |
-| `400` mentioning `temperature` on `openai/gpt-6*` | `Agent(..., temperature=None)` / `lm.generate(temperature=None)` (`agnt5-sdk-pitfalls`) |
+| `400` mentioning `temperature` on `openai/gpt-6*` | `Agent(..., temperature=None)` / `lm.generate(temperature=None)` (`agnt5-models`) |
 | Anything else | `agnt5 dev -v` and read the worker log, or `agnt5 dev logs` when detached |
 
 After moving the project directory: `uv sync && agnt5 init && agnt5 dev` (choose "Link to
