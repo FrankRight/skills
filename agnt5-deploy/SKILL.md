@@ -1,9 +1,11 @@
 ---
 name: agnt5-deploy
-description: Ship an AGNT5 worker to managed infrastructure - set secrets and AI provider credentials, agnt5 deploy to preview/staging/production (including CI flags), verify with deployment status/errors/logs and deploy debug, promote a verified build to production with agnt5 deployment promote, roll back, and scale replicas. Use for "deploy this", "promote to production", "roll back", "set the OpenAI key for production", "why did my deploy fail", or environment-scoped configuration.
+description: Ship an AGNT5 worker to managed infrastructure - set secrets and AI provider credentials, agnt5 deploy to preview/staging/production (including CI flags), the agnt5.yaml schema and what the code bundle includes (ignore files, prompts/ and skills/, Python 3.14 image), verify with deployment status/errors/logs and deploy debug, promote a verified build to production with agnt5 deployment promote, roll back, and scale replicas. Use for "deploy this", "promote to production", "roll back", "set the OpenAI key for production", "why did my deploy fail", "what goes in agnt5.yaml", or environment-scoped configuration.
 ---
 
 # AGNT5 Deploy
+
+> **TypeScript or Go?** The commands here apply to every language; the language-specific parts (setup, packaging, runtime behaviour) are in [references/typescript.md](references/typescript.md) and [references/go.md](references/go.md).
 
 Deploying moves your worker off your laptop onto AGNT5's managed infrastructure. Prereq:
 `agnt5 auth login`.
@@ -86,6 +88,34 @@ Scale: Studio Scale action, or `POST /api/v1/deployments/<id>/scale-up|scale-dow
 Studio Terminate (image/record persist). Resume: Studio Start. From Claude with the AGNT5 MCP
 connected: `scale_deployment`, `rollback_deployment`, `terminate_deployment`,
 `start_deployment`.
+
+## `agnt5.yaml` and what gets bundled
+
+```yaml
+name: my-project                  # project display name
+language: python                  # python | typescript | go
+language_version: "3.12"
+environment: dev                  # default target for agnt5 deploy
+worker:
+  command: "uv run python app.py" # used by agnt5 dev (inferred when omitted); watch / healthCheck / env are dev-only
+deploy:
+  dockerfile: ./Dockerfile        # optional; a Dockerfile in the project root switches to an image build
+  ignore_file: .agnt5ignore       # recorded; default .agnt5ignore
+  base_image: ghcr.io/agnt5dev/python-worker:3.14   # code-bundle base image (same as --base-image)
+  build_args: {KEY: value}
+  registry: {url: ..., username: ...}   # password via env, never in the file
+  resources: {memory: 512Mi, cpu: 500m}
+variables: {}                     # optional key/value map
+```
+
+Two build paths. With a `Dockerfile` in the project root the CLI builds your image
+(`.dockerignore` applies; `--force-code-bundle` overrides). Otherwise it uploads a **code
+bundle** onto the base image, excluding `.git`, `.venv`, `node_modules`, `__pycache__`, build
+output and similar, plus every pattern in `.agnt5ignore` and `.gitignore` (negations and a
+bare `*` are ignored); `--force-dockerfile` forces the image path. Consequences: `.env` is
+normally gitignored and never ships — secrets come from `agnt5 secrets set`; `prompts/` and
+`skills/` must **not** be gitignored, because the worker resolves them against its working
+directory at runtime; the Python image runs Python 3.14.
 
 ## Calling the deployed worker from your app
 

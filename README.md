@@ -1,7 +1,11 @@
 # skills
 
 A collection of [Agent Skills](https://agentskills.io) for AI coding agents working with [AGNT5](https://agnt5.com).
-Written against AGNT5 Python SDK **0.13.6** (`@agnt5/sdk` 0.10.5, `sdk-go` v0.10.3) and the September 2026 CLI.
+Written against AGNT5 Python SDK **0.13.6**, TypeScript `@agnt5/sdk` **0.10.5**, Go `sdk-go` **v0.10.3** and the September 2026 CLI.
+
+Every build and improve skill teaches Python in its `SKILL.md` and has a `references/typescript.md`
+and `references/go.md` with the same content for the other SDKs, including what each language
+does not support. Known bugs in the current releases, with workarounds, are in `agnt5-sdk-pitfalls`.
 
 ## Install
 
@@ -66,12 +70,17 @@ Skills are grouped by the AGNT5 lifecycle: **build** it, **run** it, **improve**
 | `agnt5-human-in-the-loop` | Add durable human approval, input, or selection pauses to a workflow. |
 | `agnt5-webhooks-integrations` | Webhook and event triggers (Stripe, GitHub, Sentry, Slack, Standard Webhooks), chat bots, and calling workflows from your app. |
 | `agnt5-prompts` | Versioned, code-bundled Prompt artifacts, runtime model overrides, and prompt caching. |
+| `agnt5-models` | Direct model calls (`lm.generate`/`stream`, `LM.<provider>()`, `ctx.Generate`): providers and keys, messages, structured output, streaming, and per-model quirks such as gpt-6. |
+| `agnt5-client` | Call AGNT5 from your own backend: the Python, TypeScript and Go clients, sessions, batches, streaming results, and answering a paused human-in-the-loop run. |
+| `agnt5-testing` | Test functions, workflows, tools and scorers without a worker, then smoke-test against `agnt5 dev` and production. |
+| `agnt5-sdk-pitfalls` | Known bugs and gotchas in the current SDK releases, per language, with the workaround and the Linear issue for each. |
 
 ### Run
 
 | Skill | Description |
 |-------|-------------|
 | `agnt5-deploy` | Secrets and provider credentials, `agnt5 deploy`, verify, `agnt5 deployment promote`, roll back, and scale. |
+| `agnt5-serverless` | Run components without a worker: `serve()` for Python, Node, Cloudflare and Vercel, the Go `serverless` package, signing secrets, and the `agnt5 serverless` lifecycle. |
 | `agnt5-observe` | Look up runs, traces, logs, and metrics; control automatic OpenAI/Agents SDK/ADK call capture. |
 
 ### Improve
@@ -113,6 +122,9 @@ Once installed, invoke a skill in your agent by describing the task it handles. 
 - "Create a new empty AGNT5 project" → uses `agnt5-project-init`
 - "Create a new AGNT5 template for a document processing pipeline" → uses `agnt5-ai-templates`
 - "Set up and run this AGNT5 worker locally" → uses `agnt5-project-init`
+- "Write this workflow in TypeScript" → uses `agnt5-workflows` and its `references/typescript.md`
+- "My gpt-6 call returns a 400" → uses `agnt5-sdk-pitfalls`
+- "Call this workflow from my FastAPI backend" → uses `agnt5-client`
 - "Why did run 01a0d57b… fail?" → uses `agnt5-run-investigation`
 - "Find patterns in today's runs for project a5sre" → uses `agnt5-pattern-analysis`
 

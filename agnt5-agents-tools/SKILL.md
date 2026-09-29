@@ -1,9 +1,11 @@
 ---
 name: agnt5-agents-tools
-description: Configure AGNT5 agents and the tools they call - Agent(...) options, custom @tool functions, built-in provider tools (web search, code interpreter, web fetch) and agnt5.tools web_fetch/web_search, MCP client/server integration, sandboxed code execution, before/after agent-model-tool callbacks (guardrails), agent memory (ctx.memory, ctx.conversation), prompt caching, and multi-agent patterns (handoffs, agents-as-tools). Use when creating an agent, giving it a tool or capability, adding a guardrail callback, wiring an MCP server, or routing between agents.
+description: Configure AGNT5 agents and the tools they call - Agent(...) options (sampling settings, temperature=None for gpt-6, custom endpoints via provider env vars), agent.run(history=, prompt_context=) and AgentResult, custom @tool functions, built-in provider tools (web search, code interpreter, web fetch) and agnt5.tools web_fetch/web_search, MCP client/server integration, sandboxed code execution and its per-run lifecycle, before/after agent-model-tool callbacks (guardrails), agent memory (ctx.memory, ctx.conversation, automatic per-session history, failure policy), prompt caching, and multi-agent patterns (handoffs, agents-as-tools). Use when creating an agent, giving it a tool or capability, adding a guardrail callback, wiring an MCP server, routing between agents, or when an agent's model call is rejected.
 ---
 
 # AGNT5 Agents and Tools
+
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
 
 An **Agent** is an LLM that runs in a loop: reads its instructions, calls tools as needed,
 keeps going until it has a final answer.
@@ -30,15 +32,19 @@ agent = Agent(
 | `handoffs` | no | Agents to delegate full control to |
 | `sandbox` | no | `Sandbox()` for isolated file/code execution |
 | `max_iterations` | no | Max reasoning loops, default `10` |
-| `temperature` / `max_tokens` / `top_p` | no | Sampling settings (legacy on `Agent`; default temperature `0.7`) |
-| `model_config` | no | `ModelConfig` for a custom endpoint: `base_url`, `api_key`, `timeout`, `headers` |
+| `temperature` / `max_tokens` / `top_p` | no | The only sampling settings. Default temperature `0.7` is sent unless you pass `temperature=None` (sends nothing) — required for `openai/gpt-6*`, which rejects any temperature; `gpt-5*` / `o1*` already send none. No `reasoning_effort` on `Agent` |
+| `model_config` | no | Accepted but **not read** in 0.13.6 (stored on the agent, never used). Custom endpoints come from provider env vars read by the native layer: `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `OPENROUTER_BASE_URL`, `DEEPSEEK_BASE_URL`, `MOONSHOT_BASE_URL`, `TOGETHER_BASE_URL`, plus `OPENAI_ORGANIZATION`, `OPENAI_PROJECT`, `OPENAI_REQUEST_TIMEOUT_SECS` |
 | `cache` | no | `True` or `lm.PromptCache(...)` — provider prompt caching (see `agnt5-prompts`) |
 | `callbacks` / `before_*_callback` / `after_*_callback` | no | Guardrail hooks — see Callbacks below |
 | `skills` / `skills_dir` / `agents_md` | no | On-demand SKILL.md capabilities and AGENTS.md guidance — see `agnt5-agent-skills` |
 
-Run with `result = await agent.run("...")` (full result: `result.output`,
-`result.tool_calls` — e.g. `[{"name": "get_weather", "arguments": '{"city": "Paris"}', "iteration": 1}]`)
-or stream with `async for event in agent.stream("..."):` and check `event.event_type`:
+Run with `result = await agent.run("...")`. `AgentResult` fields: `output`, `tool_calls`
+(e.g. `[{"name": "get_weather", "arguments": '{"city": "Paris"}', "iteration": 1}]`),
+`handoff_to`, `handoff_metadata` (the handoff tool's result dict; `None` without a handoff).
+`run()` and `stream()` also take `history=[Message, ...]` (prior turns prepended to the
+conversation) and `prompt_context={"var": value}` (fills `{{var}}` placeholders in
+`instructions`). `agent.cumulative_cost_usd` sums the LLM cost of every run on that `Agent`
+instance. Stream with `async for event in agent.stream("..."):` and check `event.event_type`:
 
 | Event type | When it fires |
 |---|---|
@@ -48,7 +54,12 @@ or stream with `async for event in agent.stream("..."):` and check `event.event_
 | `tool_call.started` / `tool_call.completed` / `tool_call.failed` | A tool call |
 | `skill.loaded` | The agent loaded a SKILL.md (see `agnt5-agent-skills`) |
 
-Inside a workflow, pass `context=ctx`: `await agent.run(task, context=ctx)`.
+TypeScript event names differ (`lm.message.delta`, `lm.thinking.*`, `lm.tool_call.*`) — see
+[references/typescript.md](references/typescript.md).
+
+Inside a workflow, pass `context=ctx`: `await agent.run(task, context=ctx)`. With a context
+the agent loads and saves its conversation history automatically, scoped by `user_id`, else
+`session_id`, else the run id — so a run started without a session starts fresh every time.
 
 ## Custom tools
 
@@ -102,6 +113,9 @@ agent = Agent(
 | `BuiltInTool.WEB_FETCH` | Fetch the content of a specific URL | Anthropic only |
 
 `built_in_tools`, `tools`, and `sandbox` can all be set on the same agent at once.
+`WEB_SEARCH` was live-tested on OpenAI only; the Anthropic (`web_search_20260209`) and Gemini
+(`google_search`) mappings exist in the SDK core but were not live-tested. The `Agent`
+docstring's "OpenAI Responses API only" note is stale.
 
 **Provider-agnostic alternatives** (run in your worker, work with any model) — factories that
 return a `Tool` for `tools=[...]`:
@@ -175,6 +189,12 @@ agent = Agent(
 `Sandbox(...)` options: `provider=`, `template=`, `env={...}`, `cpu_cores=`, `memory_mib=`,
 `timeout_secs=`, `auto_destroy=True`. `sandbox_tools(sandbox)` returns the same tools for use
 without `sandbox=`; `InMemorySandbox()` is a no-network stand-in for tests.
+
+Lifecycle: the agent closes its sandbox in a `finally` after **every** `run()`/`stream()`, and
+with `auto_destroy=True` (default) that destroys the provider sandbox — the next run creates a
+fresh one, so files written in one run do not survive to the next. A module-level `Sandbox()`
+is one object shared by every concurrent run of that agent; create it inside the workflow
+when runs can overlap.
 
 Provider credentials (E2B, Daytona, Vercel, Northflank, Together), local vs deployed setup,
 the `sandbox-smoke` validation template, and troubleshooting:
@@ -252,21 +272,29 @@ Hooks: `before_agent_callback` / `after_agent_callback` (`AgentCallbackContext`)
 
 ## Memory
 
-Inside a workflow/function context:
+Only `WorkflowContext` has `ctx.memory` / `ctx.conversation` — `FunctionContext` does not
+(an agent run from a function gets memory through the workflow's `context=ctx`):
 
 ```python
 await ctx.memory.set("theme", "dark")                 # KV, session-scoped by default
 theme = await ctx.memory.get("theme", "light")
-await ctx.memory.working.merge({"step": "research"})   # dict scratchpad for the run
+await ctx.memory.working.merge({"step": "research"})   # dict scratchpad, session-scoped (not per run)
 await ctx.memory.user.save("Prefers concise answers", kind="preference")  # semantic, per user
 hits = await ctx.memory.user.search("answer style", limit=5)
 await ctx.conversation.add("user", message)            # session chat history
 history = await ctx.conversation.get_messages(limit=20)
 ```
 
-Scopes: `ctx.memory.session`, `.user` (needs a `user_id`), `.run`, `.global_()`. The old
+Scopes: `ctx.memory.session`, `.user` (raises `RuntimeError` without a `user_id`), `.run`,
+`.global_()`. Semantic memory is best-effort by default
+(`AGNT5_MEMORY_FAILURE_POLICY=best_effort`): when the memory service is off, `save()` returns
+`None` and `search()` returns `[]` with no error — set
+`AGNT5_MEMORY_FAILURE_POLICY=require_memory_or_fail` to raise instead. The old
 `agnt5.memory.SemanticMemory` / `ConversationMemory` classes are deprecated — built-in
 vector-backed `SemanticMemory.store()` now raises.
+
+Related: direct model calls (`lm.generate` / `lm.stream`, structured output, gpt-6 quirks) are
+in `agnt5-models`; known SDK bugs and workarounds in `agnt5-sdk-pitfalls`.
 
 ## Source
 

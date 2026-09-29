@@ -5,6 +5,8 @@ description: Score AGNT5 component outputs - pick built-in deterministic checks 
 
 # AGNT5 Scorers
 
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
+
 A **scorer** returns a score (0.0-1.0), a pass/fail verdict, and an optional explanation for
 one component output. `agnt5-experiments` and online evals attach one or more scorers and run
 them against every dataset item.
@@ -71,7 +73,14 @@ Full preset list: `Correctness`, `Faithfulness`, `Helpfulness`, `Coherence`, `Co
 `ResponseRelevance`, `InstructionFollowing`, `GoalSuccess`, `Refusal`, `Harmfulness`,
 `Stereotyping`, plus the generic `LLMJudge(criteria=...)`. All accept `model` (default
 `openai/gpt-4o-mini`), `temperature` (default `0.0`), `threshold` (default `0.7`), and
-`include_input` (default `True`, except `Faithfulness` and `LLMJudge`, which default to `False`).
+`include_input` — default `True` except for `Faithfulness`, `Coherence`, `Conciseness` and
+`LLMJudge`, which default to `False`.
+
+Judge failures are scores, not exceptions: a provider error comes back as `score=0.0,
+passed=False, explanation="LLM call failed: …"`. The default `temperature=0.0` is one such
+error on `openai/gpt-6*` models (they reject any temperature), so a gpt-6 judge silently
+scores everything 0 — keep judges on a non-gpt-6 model (AGNT5-1374 tracks the Go SDK; the
+Python presets have the same default).
 
 ## Custom scorers
 
@@ -99,7 +108,10 @@ async def cites_order_id(ctx: ScorerContext, request: ScorerRequest) -> ScorerRe
   `ScorerResult.pass_result("why")` / `ScorerResult.fail_result("why")`.
 - Compose scorers: declare `depends_on=[...]`, then read earlier results with
   `ctx.peer_scores("scorer_name")`.
-- Custom scorers register and deploy with your worker like any component. After deploy, attach
+- Custom scorers register and deploy with your worker like any component:
+  `Worker(..., scorers=[cites_order_id])`. In explicit mode only the scorers you list are
+  registered (the built-in deterministic and judge names are added automatically);
+  `Worker(auto_register=True)` registers every `@scorer` it discovers. After deploy, attach
   by ID: `agnt5 experiments create ... --scorer-id <scorer-id>` (repeatable). The AGNT5 MCP
   tools `create_scorer` / `publish_scorer_version` manage versions.
 
@@ -112,6 +124,21 @@ from agnt5 import ScorerRequest, run_scorer
 print(asyncio.run(run_scorer("cites_order_id",
       ScorerRequest(output="Refund for order 42 issued", input={"order_id": "42"}))))
 ```
+
+`agnt5.eval` also ships the deterministic scorers as plain functions for tests and for use
+inside custom scorers: `exact_match(input, case_sensitive=None)`, `contains(input, pattern)`,
+`regex_match(input, pattern)`, `json_valid(input)`, `json_schema(input, schema)`,
+`numeric_range(input, min=, max=)`, `levenshtein(input, threshold=)`,
+`structured_assertions(input, config)`. All take `ScorerInput(output=, expected=, input=,
+trace=)` and return the Rust `agnt5.eval.ScorerResult` (`.score`, `.passed`, `.explanation`).
+Ad-hoc judge: `await llm_judge(output, LLMJudgeConfig(criteria=..., model=...), expected=...,
+input_data=...)`. Trace helpers: `extract_tool_calls(events)`, `tool_call_names(calls)`,
+`tool_trajectory_exact` / `_in_order` / `_any_order(actual, expected)`.
+
+Two `ScorerResult` types exist: `agnt5.ScorerResult` (Python dataclass, what a deployable
+`@scorer` returns; also exported as `agnt5.eval.ScorerResultPy`) and `agnt5.eval.ScorerResult`
+(the Rust type the local functions return). Bridge them with
+`ScorerResult(score=r.score, passed=r.passed, explanation=r.explanation)`.
 
 ## Trace assertions (glassbox testing)
 

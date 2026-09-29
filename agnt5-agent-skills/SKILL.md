@@ -5,6 +5,8 @@ description: Give AGNT5 agents on-demand capabilities via SKILL.md folders (Agen
 
 # AGNT5 Agent Skills
 
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
+
 A **skill** is a folder with a `SKILL.md` file. Only `name`/`description` stay in the agent's
 context; the body loads on demand when the agent decides the task matches.
 

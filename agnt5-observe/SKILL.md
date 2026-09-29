@@ -1,9 +1,11 @@
 ---
 name: agnt5-observe
-description: Look up AGNT5 runtime data with the CLI, MCP, or Studio - list and describe runs, print execution traces (steps, tool calls, LLM spans), stream run or deployment logs, read throughput/latency/cost metrics, and control automatic OpenAI / OpenAI Agents SDK / Google ADK call capture (AGNT5_CAPTURE*). Use for "show me recent failed runs", "tail the logs", "print the trace for run X", "why aren't my OpenAI calls in the trace". For a root-cause analysis of one bad run use agnt5-run-investigation; for recurring issues across runs use agnt5-pattern-analysis.
+description: Look up AGNT5 runtime data with the CLI, MCP, or Studio - list and describe runs, print execution traces (steps, tool calls, LLM spans), stream run or deployment logs, read throughput/latency/cost metrics, instrument your own code (ctx.logger attributes, agnt5.tracing spans, get_logger / set_log_level, AGNT5_DEBUG), and control automatic OpenAI / OpenAI Agents SDK / Google ADK call capture (AGNT5_CAPTURE*). Use for "show me recent failed runs", "tail the logs", "print the trace for run X", "add a span or log attribute", "why aren't my OpenAI calls in the trace". For a root-cause analysis of one bad run use agnt5-run-investigation; for recurring issues across runs use agnt5-pattern-analysis.
 ---
 
 # AGNT5 Observe
+
+> **TypeScript or Go?** The commands here apply to every language; the language-specific parts (setup, packaging, runtime behaviour) are in [references/typescript.md](references/typescript.md) and [references/go.md](references/go.md).
 
 A **run** is one execution of a workflow/function/agent. A **trace** is its full execution
 timeline — a span tree (workflow → steps → function calls → agent iterations → LLM calls →
@@ -78,6 +80,33 @@ agnt5 logs <deployment-id> --since 2h
 agnt5 logs <deployment-id> --follow --timestamps
 ```
 
+Live output deltas (`output.delta`, `lm.*.delta`, thinking deltas, progress) are transient:
+they stream while the run executes but are not stored or replayed on reconnect. Lifecycle,
+step, tool and model-call boundary events are durable.
+
+## Instrument your own code
+
+```python
+from agnt5 import get_logger, set_log_level
+from agnt5.tracing import span, span_context
+
+ctx.logger.info("Parsed invoice", invoice_id=inv.id, pages=len(pages))  # kwargs become log attributes
+
+@span("score_candidates", component_type="function", stage="rank")     # one span per call
+async def score_candidates(...): ...
+
+with span_context("db_query", runtime_context=ctx._runtime_context, table="users") as s:
+    rows = query()
+    s.set_attribute("row_count", str(len(rows)))                         # attribute values are strings
+```
+
+`ctx.logger` accepts any keyword arguments and attaches them to the run log line (dicts and
+lists are JSON-encoded, other values stringified). `create_span(name, component_type,
+runtime_context, attributes={...})` is the underlying context manager; passing
+`runtime_context=ctx._runtime_context` (the SDK's own example) links the span to the run's
+trace. `get_logger(name)` returns a logger wired to the AGNT5 handlers; `set_log_level("DEBUG")`
+or `AGNT5_DEBUG=1` (set before import) turns on SDK debug output.
+
 ## Metrics (Studio or AGNT5 MCP)
 
 From Claude with the AGNT5 MCP connected: `get_analytics_dashboard`, `get_component_breakdown`,
@@ -108,7 +137,10 @@ supported library version is installed (`pip install "agnt5[openai]"`, `"agnt5[o
 
 Observed events are best-effort: capture never blocks or alters the provider call, so a missing
 span is not proof the call didn't happen. Missing spans usually mean an unsupported library
-version or the call ran outside a component.
+version or the call ran outside a component. Capture is installed once, when `Worker` or
+`ServerlessApp` boots, so these variables must be set before the process starts. An invalid
+`AGNT5_CAPTURE_CONTENT_MODE` value logs a warning and falls back to `metadata-only`, not
+`full`.
 
 ## Machine-readable output (any CLI command)
 

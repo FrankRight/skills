@@ -87,10 +87,15 @@ you can go further to confirm a lead.
   candidate cohort in a large one, call `get_run_logs(run_id, project_id)`.
 - **Logs are large** (tens to hundreds of KB per run). Do not read them whole. Filter to lines
   matching `error|warn|fail|exception|traceback|timeout|401|403|404|5\d\d|ENOTFOUND|refused`
-  plus the app's own event names (`*_started`, `*_completed`, `*_failed`). Tracebacks give
-  the exact file and line — quote them.
+  plus the app's own event names (`*_started`, `*_completed`, `*_failed`); add `panic:|goroutine `
+  for Go workers. Tracebacks give the exact file and line — quote them.
 - **Empty traces happen.** If `get_trace_excerpt` returns `total_spans: 0`, use the logs for
   that run and list the run under *Limits*.
+- **TypeScript workers have no traces yet** (`@agnt5/sdk` up to 0.10.5, Linear AGNT5-1320):
+  every run from a TypeScript deployment has `total_spans: 0`, and every failure is reported
+  as `error_type: EXECUTION_ERROR` (AGNT5-1358). For those projects, sample and read logs
+  instead of traces, group failures by the error name in the logs rather than by error type,
+  and do not report "missing traces" or "one generic error type" as a pattern in the project.
 - **`completed` is not proof of success.** For completed runs, check the logs for failed side
   effects: HTTP 4xx/5xx on writes, `*_failed` events, "treating as cache miss", missing IDs
   (`None`/`null`) flowing through later steps. A completed run that wrote nothing is a
@@ -152,7 +157,8 @@ Before reporting, try to break it:
 - **Rule out platform noise.** Do not report patterns whose root cause is AGNT5's own
   machinery — scorer runs, eval harness failures, durable-execution errors such as
   `STALE_AUTHORITY` or "lease fence mismatch", missing traces, inconsistent span attributes.
-  List them under *Not reported* as platform issues so the AGNT5 team can see them.
+  List them under *Not reported* as platform issues so the AGNT5 team can see them. Missing
+  traces on TypeScript deployments are the known SDK gap above, not a new platform issue.
 
 ### 5. Measure frequency
 
