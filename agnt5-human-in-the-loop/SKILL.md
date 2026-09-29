@@ -5,7 +5,7 @@ description: Add durable human-in-the-loop pauses to an AGNT5 workflow with ctx.
 
 # AGNT5 Human-in-the-loop
 
-> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support.
 
 `ctx.wait_for_user()` pauses a workflow durably mid-execution, shows a question to the user,
 and resumes from that exact point once they respond — the pause survives worker restarts.

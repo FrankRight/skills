@@ -5,7 +5,7 @@ description: Define AGNT5 functions and workflows - @function with retries, back
 
 # AGNT5 Workflows
 
-> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support.
 
 A **workflow** is a durable orchestrator: if it crashes mid-run, it restarts and resumes from
 the last completed step instead of starting over. A **function** is the stateless unit of
@@ -258,4 +258,4 @@ without a checkpoint they repeat on every replay: wrap anything that must not re
 https://agnt5.com/docs/build/workflows · https://agnt5.com/docs/build/functions
 
 Related skills: `agnt5-models` (direct `lm.generate` / `lm.stream`), `agnt5-client` (calling
-runs from your app), `agnt5-testing`, `agnt5-sdk-pitfalls`.
+runs from your app), `agnt5-testing`.

@@ -5,7 +5,7 @@ description: Configure AGNT5 agents and the tools they call - Agent(...) options
 
 # AGNT5 Agents and Tools
 
-> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support.
 
 An **Agent** is an LLM that runs in a loop: reads its instructions, calls tools as needed,
 keeps going until it has a final answer.
@@ -294,7 +294,7 @@ Scopes: `ctx.memory.session`, `.user` (raises `RuntimeError` without a `user_id`
 vector-backed `SemanticMemory.store()` now raises.
 
 Related: direct model calls (`lm.generate` / `lm.stream`, structured output, gpt-6 quirks) are
-in `agnt5-models`; known SDK bugs and workarounds in `agnt5-sdk-pitfalls`.
+in `agnt5-models`.
 
 ## Source
 

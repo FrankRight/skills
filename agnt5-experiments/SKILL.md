@@ -5,7 +5,7 @@ description: Evaluate AGNT5 components end to end - curate eval datasets (add pr
 
 # AGNT5 Experiments and Datasets
 
-> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support.
 
 A **dataset** is a curated set of test cases. An **experiment** binds a target (deployed
 component, deployment, or Prompt) to a dataset **version** and a set of scorers (see
