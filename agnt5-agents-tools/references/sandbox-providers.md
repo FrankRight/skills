@@ -1,7 +1,9 @@
 # Sandbox providers — credentials and setup
 
-`Sandbox()` auto-detects the first configured provider; pass `provider=` explicitly when more
-than one is configured.
+`Sandbox()` (`provider="auto"`) takes the **first configured provider in this order:
+e2b → daytona → vercel → northflank → together**; pass `provider="e2b"` etc. explicitly when
+more than one is configured. There is no `AGNT5_SANDBOX_PROVIDER` variable — the SDK never
+reads one.
 
 | Provider | Selector | Required env vars |
 |---|---|---|
@@ -11,10 +13,10 @@ than one is configured.
 | Northflank | `northflank` | `NORTHFLANK_API_TOKEN`, `NORTHFLANK_PROJECT_ID` |
 | Together Code Interpreter | `together` | `TOGETHER_API_KEY` |
 
-**Local dev** — put credentials in `.env` and start with the explicit env file:
+**Local dev** — put credentials in `.env` and start with the explicit env file (choose the
+provider in code, `Sandbox(provider="e2b")`, when more than one key is present):
 
 ```bash
-AGNT5_SANDBOX_PROVIDER=e2b
 E2B_API_KEY=e2b_...
 ```
 ```bash
@@ -44,6 +46,8 @@ agnt5 --env-file .env run sandbox_coding_agent_check --type workflow \
 | Symptom | Check |
 |---|---|
 | `Sandbox provider 'auto' is not configured` | Worker has no supported provider env vars — restart with `agnt5 --env-file .env dev` or update the deployed worker's environment |
+| `SandboxProviderError vercel from_env: VERCEL_TEAM_ID and VERCEL_PROJECT_ID are required with VERCEL_TOKEN` on **every** `Sandbox()`, even `provider="e2b"` | Provider detection loads all configured providers at once and a half-configured one raises — set both Vercel ids or remove `VERCEL_TOKEN` |
+| Sandboxes unexpectedly run on Together | `TOGETHER_API_KEY` (set for LLM calls) also registers the Together sandbox provider; with `provider="auto"` and no e2b/daytona/vercel/northflank key it wins — pass `provider=` explicitly |
 | Provider creation fails | Provider key is valid and the account has sandbox access enabled |
 | File ops fail but code execution works | Run `sandbox_agent_tools_check` to isolate write/list/read/execute |
 | Shutdown doesn't complete | Provider-side quota, active sandbox limits, provider API status |

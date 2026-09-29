@@ -1,9 +1,11 @@
 ---
 name: agnt5-prompts
-description: Manage AGNT5 Prompt artifacts as versioned, code-bundled text - author prompts/<id>.mdx files, pin or select a prompt version, override runtime model/temperature per run, and enable prompt caching (cache=True / lm.PromptCache, Gemini context caches) to get cache hits. Use when extracting inline prompt text into a managed Prompt, pinning a prompt version, changing how a prompt resolves in dev vs production, or debugging low cache-hit rates.
+description: Manage AGNT5 Prompt artifacts as versioned, code-bundled text - author prompts/<id>.mdx files, pin or select a prompt version, override runtime model/temperature per run (lm.generate only), and enable prompt caching (cache=True / lm.PromptCache, Gemini context caches) to get cache hits. Use when extracting inline prompt text into a managed Prompt, pinning a prompt version, changing how a prompt resolves in dev vs production, or debugging low cache-hit rates.
 ---
 
 # AGNT5 Prompts
+
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
 
 A **Prompt** is a managed LLM prompt you can draft/test in AGNT5, then commit alongside your
 application code for production — so the prompt version and code version move together.
@@ -96,6 +98,11 @@ ctx.runtime.prompts["review"] = LLMRuntimeOptions(model="openai/gpt-4o", tempera
 The Prompt file remains the source of truth for prompt *text*; runtime overrides only change
 model execution settings for that run. A prompt-specific override **replaces** the global one
 for that prompt (fields are not merged — set every field you need).
+
+Scope (0.13.6): only `lm.generate()` reads `ctx.runtime.llm` / `ctx.runtime.prompts`.
+`lm.stream()` and `Agent` ignore them, so a model call that must be overridable from the
+Playground or an experiment has to go through `lm.generate`. Direct model-call options
+(`response_format`, streaming, provider quirks such as gpt-6) are covered in `agnt5-models`.
 
 ## Use inside workflows
 

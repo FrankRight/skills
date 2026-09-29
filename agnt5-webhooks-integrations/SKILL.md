@@ -1,9 +1,11 @@
 ---
 name: agnt5-webhooks-integrations
-description: Connect AGNT5 to the outside world - trigger workflows from Standard Webhooks, Sentry, Stripe, GitHub, or Slack events and internal event() triggers (filters, input mapping, batching, delays), with signature verification and idempotent delivery; run an agent as a Slack/Discord/Teams/Telegram chat bot with ChatBot; and call deployed workflows from your own app with Client.run/submit and idempotency keys. Use for "receive a Stripe/GitHub/Sentry webhook", "start a workflow when X happens", "build a Slack bot", or "call my AGNT5 workflow from my backend".
+description: Connect AGNT5 to the outside world - trigger workflows from Standard Webhooks, Sentry, Stripe, GitHub, or Slack events and internal event() triggers, the trigger envelope the handler receives (event["data"]["body"] plus deployment_id/target_kind/target_ref kwargs; filter/input-mapping/batch/delay options exist but are not dispatched yet), signature verification and idempotent delivery; run an agent as a Slack/Discord/Teams/Telegram chat bot with ChatBot; and call deployed workflows from your own app with Client.run/submit, pending receipts and idempotency keys. Use for "receive a Stripe/GitHub/Sentry webhook", "start a workflow when X happens", "build a Slack bot", "call my AGNT5 workflow from my backend", or a triggered workflow failing with an unexpected keyword argument.
 ---
 
 # AGNT5 Webhooks and Integrations
+
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
 
 A webhook lets an external system start a workflow by POSTing an event to AGNT5. The gateway
 verifies the signature, turns the delivery into a durable event, and starts every workflow
@@ -14,41 +16,59 @@ write the workflow and declare what it listens for.
 
 ```python
 import json
-from agnt5 import webhook, workflow
+from agnt5 import WorkflowContext, webhook, workflow
 
 @workflow(name="triage_issue", triggers=[webhook("sentry", event="issue.created")])
-async def triage_issue(ctx, event: dict) -> dict:
-    payload = json.loads(event["body"])   # raw body string — parse it yourself
+async def triage_issue(ctx: WorkflowContext, event: dict, **_) -> dict:
+    payload = json.loads(event["data"]["body"])   # raw body string — parse it yourself
     issue = payload["data"]["issue"]
     ...
 ```
+
+The gateway starts the workflow with **four keyword arguments**: `event`, `deployment_id`,
+`target_kind`, `target_ref`. Accept the extras with `**_` (or name them) — a handler declared
+as `async def h(ctx, event: dict)` fails with `TypeError: got an unexpected keyword argument
+'deployment_id'` (live-verified). `webhook` is importable from `agnt5` but not listed in
+`agnt5.__all__`, so `from agnt5 import *` does not bring it in.
 
 `source` is one of `standard`, `sentry`, `stripe`, `github`, `slack`. A single event can fan
 out to multiple workflows — every workflow whose trigger matches `{source}.{event}` starts
 independently.
 
 Internal events use `event("user.signed_up")` the same way. Both `webhook()` and `event()`
-accept optional `filter_expression=` (only start when it matches), `input_mapping=` (reshape
-the payload into the workflow's parameters instead of receiving the envelope),
-`batch_window_ms=` (collect deliveries into one run), `delay_expression=`, and `trigger_id=`.
+also accept `filter_expression=`, `input_mapping=`, `batch_window_ms=`, `delay_expression=`
+and `trigger_id=`. **Leave the first four unset**: the current gateway skips any trigger that
+sets one of them as unsupported (counted in the event's `skipped_unsupported_count`; the
+workflow does not start; AGNT5-1376), and their expression syntax is undocumented. Filter
+inside the workflow instead.
 
 ## What the workflow receives
 
+`event` is the gateway's trigger envelope; the webhook delivery sits under `event["data"]`:
+
 ```json
 {
-  "_webhook": true,
-  "source": "sentry",
-  "integration_id": "int_abc123",
-  "event_type": "sentry.issue.created",
-  "idempotency_key": "req_9f3c…",
-  "timestamp": 1733337600,
-  "headers": { "sentry-hook-resource": "issue" },
-  "body": "{\"action\":\"created\",\"data\":{ … }}"
+  "event": {
+    "id": "…", "name": "sentry.issue.created", "source": "…", "timestamp_ns": 1733337600000000000,
+    "data": {
+      "_webhook": true,
+      "source": "sentry",
+      "integration_id": "int_abc123",
+      "event_type": "sentry.issue.created",
+      "idempotency_key": "req_9f3c…",
+      "timestamp": 1733337600,
+      "headers": { "sentry-hook-resource": "issue" },
+      "body": "{\"action\":\"created\",\"data\":{ … }}"
+    }
+  },
+  "deployment_id": "…", "target_kind": "deployment_id", "target_ref": "…"
 }
 ```
 
 `body` is the raw request body as a **string** — parse it yourself so you operate on exactly
-the bytes that were signature-verified. `headers` keys are lowercased.
+the bytes that were signature-verified. `headers` keys are lowercased. For `event()` triggers
+`event["data"]` is whatever the publisher sent; `target_kind` is `deployment_id` or
+`environment_ref`.
 
 ## Set up an integration (once per source)
 
@@ -133,15 +153,18 @@ Model calls need a provider credential (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, �
 ## Integrating an existing application (non-webhook)
 
 Call a deployed workflow/agent from your own backend with the SDK client (reads
-`AGNT5_API_KEY`, and `AGNT5_GATEWAY_URL` defaulting to `https://gw.agnt5.com`):
+`AGNT5_API_KEY` — must start with `agnt5_sk_` — and `AGNT5_GATEWAY_URL`, default
+`https://gw.agnt5.com`):
 
 ```python
 from agnt5 import Client
 
 client = Client()
-# blocking — waits for the result
+# waits up to wait_timeout (default 300 s), then returns a pending receipt instead of blocking
 res = client.run("onboarding_workflow", {"user_email": "ada@example.com"},
                  component_type="workflow", idempotency_key=f"onboard:{user_id}")
+if res.is_pending:                                   # HTTP 202 — the run is still going
+    res = client.wait_for_result(res.run_id, timeout=900)
 print(res.status, res.output)
 
 # fire-and-forget — returns a run_id to poll or inspect later
@@ -149,9 +172,14 @@ sub = client.submit("onboarding_workflow", {"user_email": "ada@example.com"},
                     component_type="workflow", idempotency_key=f"onboard:{user_id}")
 ```
 
-`AsyncClient` has the same methods. Always pass `idempotency_key=` from a stable business id so
-retries from your app don't start duplicate runs. From a shell, `agnt5 run ... --env
-production` does the same (see `agnt5-project-init`).
+`component_type` defaults to `"function"` — pass it for workflows, agents and tools.
+`AsyncClient` has the same `run` / `submit` but no `wait_for_result`: poll with
+`await client.get_status(run_id)` / `await client.get_result(run_id)`. Always pass
+`idempotency_key=` from a stable business id so retries from your app don't start duplicate
+runs. `run` and `stream_events` (not `submit`) take `session_id=` / `user_id=` to give the run
+session and user scope (`agnt5-workflows`). From a shell, `agnt5 run ... --env production`
+does the same (see `agnt5-project-init`). Full client API, streaming and answering a paused
+run: `agnt5-client`.
 
 ## Source
 

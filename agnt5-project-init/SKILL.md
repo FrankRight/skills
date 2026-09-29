@@ -5,6 +5,8 @@ description: Set up and run an AGNT5 project locally - install, update, and auth
 
 # AGNT5 Project Setup and Local Development
 
+> **TypeScript or Go?** The commands here apply to every language; the language-specific parts (setup, packaging, runtime behaviour) are in [references/typescript.md](references/typescript.md) and [references/go.md](references/go.md).
+
 Skip any step that is already done: `agnt5 auth status` shows a signed-in user → skip 0;
 `agnt5.yaml` has project metadata → skip 1.
 
@@ -81,7 +83,9 @@ cp .env.example .env     # then fill in real keys, e.g. OPENAI_API_KEY=sk-...
 
 The uv warning `VIRTUAL_ENV does not match the project environment path` is harmless.
 Required keys vary by template — check `.env.example`. Deployed workers get secrets
-separately (`agnt5-deploy`).
+separately (`agnt5-deploy`). The managed Python worker image runs **Python 3.14**, so a
+dependency that only resolves on your local 3.12 will break the deploy — prefer packages with
+3.14 wheels.
 
 ## 3. Start the worker
 
@@ -119,8 +123,11 @@ agnt5 run my_agent --type agent --input '{"message": "..."}'        # agent inpu
 
 `--type` defaults to `function` and auto-detects on a miss. Other flags: `--timeout 2m`
 (client-side only; the run keeps going), `--env production` / `--deployment-id <id>` to hit a
-deployed worker. Output is JSON when piped (`| jq`). To inspect what happened:
-`agnt5 inspect runs ls`, `agnt5 inspect trace -r <run-id>` (see `agnt5-observe`).
+deployed worker. There is no session/user flag — session-scoped runs come from `Client.run(...,
+session_id=...)` (`agnt5-client`). Output is JSON when piped (`| jq`). A function with
+`retries=` shows only its first failed attempt here while the platform keeps retrying. To
+inspect what happened: `agnt5 inspect runs ls`, `agnt5 inspect trace -r <run-id>` (see
+`agnt5-observe`).
 
 ## Common errors
 
@@ -132,6 +139,10 @@ deployed worker. Output is JSON when piped (`| jq`). To inspect what happened:
 | Auth errors | `agnt5 auth login` (`agnt5 auth logout` first if you switched accounts) |
 | Wrong workspace / project not found | `agnt5 workspace list`, then `agnt5 workspace use <name>` |
 | A component is missing | `agnt5 components`; check it is imported/registered in `app.py` (or `Worker(auto_register=True)`) |
+| `TypeError: Function 'x' requires FunctionContext as first argument` | Inside a workflow call it through `ctx.step(x, ...)` (`agnt5-workflows`) |
+| `ConfigurationError: Tool function 'x' first parameter must be 'ctx: Context'` | Annotate the first tool parameter exactly `ctx: Context` (`from agnt5.context import Context`) |
+| `TypeError: got an unexpected keyword argument 'deployment_id'` on a triggered workflow | Declare it `async def h(ctx, event: dict, **_)` (`agnt5-webhooks-integrations`) |
+| `400` mentioning `temperature` on `openai/gpt-6*` | `Agent(..., temperature=None)` / `lm.generate(temperature=None)` (`agnt5-sdk-pitfalls`) |
 | Anything else | `agnt5 dev -v` and read the worker log, or `agnt5 dev logs` when detached |
 
 After moving the project directory: `uv sync && agnt5 init && agnt5 dev` (choose "Link to

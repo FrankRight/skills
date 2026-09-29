@@ -81,11 +81,20 @@ language: python
 language_version: "3.12"
 environment: dev
 
+worker:
+  command: "uv run python app.py"   # what `agnt5 dev` runs; inferred from the language when omitted
+
 deploy:
   resources:
     memory: 512Mi
     cpu: 500m
+  # optional: dockerfile, ignore_file, base_image, build_args, registry.url / registry.username
+# variables: {}                     # optional key/value map
 ```
+
+Full schema and what gets bundled: `agnt5-deploy`. The managed Python worker image runs
+**Python 3.14** (`ghcr.io/agnt5dev/python-worker:3.14`), so pick dependencies with 3.14
+wheels even though `requires-python` says `>=3.11`.
 
 `.env.example` — one line per required key, e.g. `OPENAI_API_KEY="your-openai-api-key-here"`
 (key names per provider: [references/providers.md](references/providers.md)).
@@ -210,6 +219,7 @@ async def main() -> int:
             functions=[stage1, stage2],
             agents=[agent1, agent2],
             tools=[tool1],
+            scorers=[my_scorer],      # only if you wrote @scorer functions — unlisted scorers never register
         )
         await worker.run()
     except Exception as e:
@@ -224,7 +234,9 @@ if __name__ == "__main__":
 The coordinator endpoint comes from `AGNT5_COORDINATOR_ENDPOINT` (set by `agnt5 dev`), so
 don't hardcode it. Alternative to explicit lists: `Worker(service_name=..., auto_register=True)`
 discovers components in the packages listed under `[tool.hatch.build.targets.wheel]`. Omit any
-list (and its import) whose file you didn't create.
+list (and its import) whose file you didn't create. `Worker(max_concurrency=...)` caps
+in-flight invocations (default 100, or `AGNT5_MAX_CONCURRENCY`) — raise it for IO-bound LLM
+workflows, lower it for CPU-bound work.
 
 ## Step-by-step
 
@@ -244,7 +256,11 @@ list (and its import) whose file you didn't create.
    - No handoffs for fixed sequences — use workflow steps.
    - No HITL unless asked.
    - Model `openai/gpt-4o-mini` unless the user names another; ask when unsure rather than
-     guessing a model name.
+     guessing a model name. For `openai/gpt-6*` pass `temperature=None` to `Agent` (the
+     default 0.7 is rejected with a 400) and do not use `reasoning_effort` — the native
+     binding never sends it (AGNT5-1370). Details: `agnt5-sdk-pitfalls`.
+   - Keep `prompts/` and `skills/` inside the project and out of `.gitignore`: they resolve
+     against the worker's working directory and must ship in the deploy bundle.
 6. **Hand off** to `agnt5-project-init` (`uv sync`, `.env`, `agnt5 dev`, `agnt5 run`).
 
 ## Source

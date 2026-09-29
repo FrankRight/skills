@@ -1,9 +1,11 @@
 ---
 name: agnt5-human-in-the-loop
-description: Add durable human-in-the-loop pauses to an AGNT5 workflow with ctx.wait_for_user() (text, approval, select, multiselect) or agent-level AskUserTool/RequestApprovalTool. Use when a workflow or agent needs to pause for human approval, ask the user a question, or let them pick an option before continuing ("ask_user", "request_approval", "wait for sign-off"), including replay-safety guidance for code that runs before a pause.
+description: Add durable human-in-the-loop pauses to an AGNT5 workflow with ctx.wait_for_user() (text, approval, select, multiselect) or agent-level AskUserTool/RequestApprovalTool, including the answer formats each input type returns and how to answer a paused run from your own backend (RunStatus.AWAITING_USER_INPUT, POST /v1/workflows/resume/{run_id}). Use when a workflow or agent needs to pause for human approval, ask the user a question, or let them pick an option before continuing ("ask_user", "request_approval", "wait for sign-off"), including replay-safety guidance for code that runs before a pause.
 ---
 
 # AGNT5 Human-in-the-loop
+
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
 
 `ctx.wait_for_user()` pauses a workflow durably mid-execution, shows a question to the user,
 and resumes from that exact point once they respond — the pause survives worker restarts.
@@ -21,6 +23,8 @@ and resumes from that exact point once they respond — the pause survives worke
 ## Input types
 
 ```python
+import json
+
 # text — free-form
 name = await ctx.wait_for_user("What should we call this report?")
 
@@ -38,13 +42,18 @@ fmt = await ctx.wait_for_user(
     options=[{"id": "pdf", "label": "PDF"}, {"id": "markdown", "label": "Markdown"}],
 )
 
-# multiselect — comma-separated string of chosen ids
+# multiselect — a JSON array string of chosen ids, e.g. '["market","tech"]'
 topics = await ctx.wait_for_user(
     question="Which topics?", input_type="multiselect",
     options=[{"id": "market", "label": "Market"}, {"id": "tech", "label": "Tech"}],
 )
-selected = topics.split(",") if topics else []
+selected = json.loads(topics) if topics else []
 ```
+
+Studio submits multiselect answers as a JSON array string (a custom entry appears inside it
+as `"__custom__:<text>"`); for `select` with `allow_custom=True` the custom text comes back
+with that prefix already stripped. These formats were live-verified for TypeScript and Go
+against the same gateway; Python was not separately live-tested.
 
 `skippable=True` → handle `None`: `note = await ctx.wait_for_user(..., skippable=True); instructions = note or "default"`.
 You can call `wait_for_user()` any number of times in one workflow, including inside `if`
@@ -79,6 +88,11 @@ a charge — belongs in a `ctx.step(...)` before the pause: on replay the checkp
 returns without re-running it. Bare code in the workflow body (logging, string building) does
 re-run; that is fine as long as it has no side effects. `ctx._is_replay` exists but is a
 private attribute — use it at most to suppress duplicate log lines.
+
+**Never wrap the pause in a bare `except:`.** `wait_for_user()` pauses by raising
+`WaitingForUserInputException`, a `BaseException`; `except:` / `except BaseException:`
+around it — or around an agent whose `AskUserTool` triggers it — swallows the pause and the
+workflow continues with no answer. Catch `Exception`.
 
 ## Multi-step HITL with state
 
@@ -117,6 +131,23 @@ async def agent_with_hitl(ctx: WorkflowContext, task: str) -> dict:
 |---|---|
 | `AskUserTool(ctx)` | Agent calls `ask_user` with a question; workflow pauses for a text reply |
 | `RequestApprovalTool(ctx)` | Agent calls `request_approval`; workflow pauses with Approve/Reject |
+
+## Answering a pause from your own backend
+
+A paused run reports `RunStatus.AWAITING_USER_INPUT` (`client.get_status(run_id).status`).
+There is no Python `Client` method to answer it in 0.13.6; call the gateway directly:
+
+```bash
+curl -X POST "$AGNT5_GATEWAY_URL/v1/workflows/resume/<run_id>" \
+  -H "X-API-KEY: $AGNT5_API_KEY" -H "Content-Type: application/json" \
+  -d '{"user_response": "approve"}'
+```
+
+`user_response` reaches `wait_for_user()` as a **string**: send a plain string for text /
+approval / select, a JSON array string (`"[\"market\",\"tech\"]"`) for multiselect, and
+`"__skipped__"` to skip (the SDK turns it into `None`). A non-string JSON value is serialized
+before delivery, so `null` arrives as the string `"null"`, not as a skip. Answer formats were
+live-verified for TypeScript/Go; Python not separately. Client usage: `agnt5-client`.
 
 ## Edge cases
 
