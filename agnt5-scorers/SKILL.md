@@ -5,7 +5,7 @@ description: Score AGNT5 component outputs - pick built-in deterministic checks 
 
 # AGNT5 Scorers
 
-> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support. Known SDK bugs with workarounds are in the `agnt5-sdk-pitfalls` skill.
+> **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support.
 
 A **scorer** returns a score (0.0-1.0), a pass/fail verdict, and an optional explanation for
 one component output. `agnt5-experiments` and online evals attach one or more scorers and run

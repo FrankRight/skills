@@ -2,8 +2,7 @@
 
 Verified against `@agnt5/sdk` **0.10.5**. Check the current version first:
 `npm view @agnt5/sdk version`. For the full API mapping read the `references/typescript.md`
-of `agnt5-workflows`, `agnt5-agents-tools` and `agnt5-human-in-the-loop`; known TypeScript
-bugs are listed in `agnt5-sdk-pitfalls/references/typescript.md`.
+of `agnt5-workflows`, `agnt5-agents-tools` and `agnt5-human-in-the-loop`.
 
 ## Layout
 
