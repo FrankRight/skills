@@ -72,7 +72,7 @@ Logs from a deployed Go worker:
 
 | You write | Where you can read it |
 |---|---|
-| `ctx.Logger().Info(...)` | the run's logs: MCP `get_run_logs`, or the run in Studio (`agnt5 inspect logs -r` currently returns 403) |
+| `ctx.Logger().Info(...)` | the run's logs: `agnt5 inspect logs -r <runId>` (older CLIs answer 403), MCP `get_run_logs`, or the run in Studio |
 | `slog.InfoContext(ctx, ...)` with `agnt5.NewSlogHandler` installed | the run's logs, same as above |
 | `log.Printf`, `fmt.Println`, `slog.Info` without a context | nowhere after deploy — not in the run's logs, `agnt5 logs <deployment-id>` (the platform's lifecycle log) or `agnt5 deploy debug --logs` while the worker is healthy. Locally they print in the `agnt5 dev` terminal. |
 | anything printed just before a crash | `agnt5 deploy debug <deployment-id> --logs`, Pod Status → last output line |

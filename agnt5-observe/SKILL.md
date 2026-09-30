@@ -117,8 +117,9 @@ tool.search_flights                   [197ms]
 
 In Studio: open the run → **Trace** tab — interactive tree, updates live while running.
 
-`agnt5 inspect trace -r` looks the run up among the project's 200 most recent runs; for an
-older run, take the trace ID from `agnt5 inspect runs describe` and use the MCP
+`agnt5 inspect trace -r` looks the run up among the project's 200 most recent run summaries,
+then on the gateway, which also has runs that have not ended. If it still reports the run as not
+found, take the trace ID from `agnt5 inspect runs describe` and use the MCP
 `get_trace_excerpt` / `get_trace` tools.
 
 ## Logs

@@ -14,7 +14,7 @@ what a Go worker emits and how to control it.
 | `ctx.Generate` | one lm span / MODEL activation (`lm.completed` / `lm.failed` are the event names trace scorers match) |
 | `ctx.AskUser` / `ctx.Sleep` | `workflow.step.paused`, `approval.requested`, `workflow.paused` / timer activation |
 | `load_skill` | `skill.loaded` (`skill_name`, `instructions_length`, `resources_materialized`) |
-| `ctx.Logger().Info(...)` | run-scoped log record (MCP `get_run_logs`, the run in Studio) plus a `log.info` journal event |
+| `ctx.Logger().Info(...)` | run-scoped log record (`agnt5 inspect logs -r`, MCP `get_run_logs`, the run in Studio) plus a `log.info` journal event |
 | `ctx.Output(delta)` | `output.delta` (streaming) |
 | `ctx.Emit(agnt5.Event{Type: "order.validated", Data: map[string]any{...}})` | your own event in the journal |
 

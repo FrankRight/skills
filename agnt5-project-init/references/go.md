@@ -91,7 +91,8 @@ run shows `assigned` rather than `paused` while it sleeps.
 
 What you see where, locally: `fmt`/`log` output and your own `slog` handler print in the
 `agnt5 dev` terminal (`agnt5 dev logs` when detached). `ctx.Logger()` lines do not print
-there; they go to the run's logs (MCP `get_run_logs`, Studio), see `agnt5-observe`.
+there; they go to the run's logs (`agnt5 inspect logs -r <runId>`, MCP `get_run_logs`, Studio),
+see `agnt5-observe`.
 
 Minimal `main.go`:
 
