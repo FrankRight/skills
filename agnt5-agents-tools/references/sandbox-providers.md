@@ -28,30 +28,16 @@ integration, store the credential at the narrowest scope that works, then deploy
 the worker picks it up. The credential is never shown to the model — only the worker uses it
 to create/manage the sandbox.
 
-**Validate a provider before relying on it** — scaffold the `sandbox-smoke` template and run
-its checks:
-
-```bash
-agnt5 create --template python/sandbox-smoke sandbox-smoke
-cd sandbox-smoke && cp .env.example .env
-agnt5 --env-file .env dev
-
-agnt5 --env-file .env run sandbox_lifecycle_check --type workflow \
-  --input '{"provider": "e2b", "code": "print(6 * 7)", "language": "python"}'
-agnt5 --env-file .env run sandbox_agent_tools_check --type workflow --input '{"provider": "e2b"}'
-agnt5 --env-file .env run sandbox_coding_agent_check --type workflow \
-  --input '{"provider": "e2b", "model": "openai/gpt-4o-mini"}'
-```
+The `sandbox-smoke` template that the product docs mention is not in the published template
+catalog: `agnt5 create --template python/sandbox-smoke` fails with
+`template 'sandbox-smoke' not found`.
 
 | Symptom | Check |
 |---|---|
-| `Sandbox provider 'auto' is not configured` | Worker has no supported provider env vars — restart with `agnt5 --env-file .env dev` or update the deployed worker's environment |
+| `Sandbox provider 'auto' is not configured` (or `'e2b'`, ...) | Worker has no supported provider env vars — restart with `agnt5 --env-file .env dev` or update the deployed worker's environment |
 | `SandboxProviderError vercel from_env: VERCEL_TEAM_ID and VERCEL_PROJECT_ID are required with VERCEL_TOKEN` on **every** `Sandbox()`, even `provider="e2b"` | Provider detection loads all configured providers at once and a half-configured one raises — set both Vercel ids or remove `VERCEL_TOKEN` |
 | Sandboxes unexpectedly run on Together | `TOGETHER_API_KEY` (set for LLM calls) also registers the Together sandbox provider; with `provider="auto"` and no e2b/daytona/vercel/northflank key it wins — pass `provider=` explicitly |
 | Provider creation fails | Provider key is valid and the account has sandbox access enabled |
-| File ops fail but code execution works | Run `sandbox_agent_tools_check` to isolate write/list/read/execute |
 | Shutdown doesn't complete | Provider-side quota, active sandbox limits, provider API status |
-
-(`--type workflow` assumes the template's checks are workflows; if `agnt5 components` lists them as functions, drop the flag.)
 
 Source: https://agnt5.com/docs/integrations/sandbox-providers

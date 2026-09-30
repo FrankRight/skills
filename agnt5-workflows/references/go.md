@@ -147,7 +147,10 @@ if err := ctx.Sleep(24*time.Hour, agnt5.WithSleepKey("wait_24h")); err != nil {
 
 Like `AskUser`, `Sleep` returns an error the handler must propagate; on replay a completed timer
 returns `nil` immediately. Without a durable runtime (plain local process) it blocks in-process
-and honours `ctx.Done()`. `time.Sleep` is never checkpointed.
+and honours `ctx.Done()`. `time.Sleep` is never checkpointed. On a deployed worker the run
+reports `agnt5.RunStatusPaused` while it sleeps, the same status as an `AskUser` question;
+`agnt5-human-in-the-loop` shows how to tell them apart before resuming. Under local
+`agnt5 dev` a Go `ctx.Sleep` does not suspend (the run shows `assigned`).
 
 ## State
 

@@ -153,6 +153,50 @@ Both constructors are typed `ContextImpl`, so cast the workflow `ctx`. Create th
 the workflow handler with the live `ctx`; a module-level agent has no context to suspend. The
 tool names are exported from the root `@agnt5/sdk` package (no `agnt5.tool` submodule).
 
+## Answering a pause from your own backend
+
+Same rules as the SKILL.md: the run reports `paused` for a question and for a durable
+`ctx.sleep()`, only the newest `workflow.paused` event tells them apart, and resume and cancel
+need a key with the `workflow` scope (`--scopes run,workflow`; a `run`-only key gets 403
+`INSUFFICIENT_SCOPES`). Unfinished runs are missing from `agnt5 inspect runs ls`; find them
+with `GET /v1/runs?component_name=<workflow>`. TypeScript workers emit no
+`approval.requested`; the question sits in the `workflow.paused` metadata. `Client` has no
+resume method and `client.getEvents()` drops each event's `metadata`, so read the events with
+`fetch`:
+
+```typescript
+import { Client } from '@agnt5/sdk';
+
+const gatewayUrl = process.env.AGNT5_GATEWAY_URL ?? 'https://gw.agnt5.com';
+const headers = { 'X-API-KEY': process.env.AGNT5_API_KEY!, 'Content-Type': 'application/json' };
+const client = new Client({ gatewayUrl, apiKey: process.env.AGNT5_API_KEY });
+
+interface GatewayEvent { event_type: string; data?: Record<string, unknown>; metadata?: Record<string, string> }
+
+/** Metadata of the question a paused run waits on; undefined while it sleeps or runs. */
+async function pendingQuestion(runId: string): Promise<Record<string, string> | undefined> {
+  if ((await client.getStatus(runId)).status !== 'paused') return undefined;
+  const res = await fetch(`${gatewayUrl}/v1/runs/${runId}/events`, { headers });
+  if (!res.ok) throw new Error(`events: HTTP ${res.status}`);
+  const { items } = (await res.json()) as { items: GatewayEvent[] };
+  const latest = items.filter((e) => e.event_type === 'workflow.paused').at(-1);
+  return latest?.metadata?.pause_reason === 'user_input_required' ? latest.metadata : undefined;
+}
+
+async function answer(runId: string, userResponse: string): Promise<boolean> {
+  if (!(await pendingQuestion(runId))) return false;   // sleeping, running or finished
+  const res = await fetch(`${gatewayUrl}/v1/workflows/resume/${runId}`, {
+    method: 'POST', headers, body: JSON.stringify({ user_response: userResponse }),
+  });
+  return res.ok;
+}
+```
+
+`client.run()` returns at the first pause with `status: 'paused'`. That response has
+`isPending === true`, and `client.waitForResult()` keeps polling a paused run until its timeout,
+then throws `RunError`; check `res.status === 'paused'` before waiting. Cancel with
+`POST /v1/runs/{runId}/cancel` and an optional `{ reason }` body.
+
 ## Edge cases
 
 - **Unexpected text**: `Number(raw)` and check `Number.isNaN`; `raw` may be `null`.
@@ -172,6 +216,7 @@ tool names are exported from the root `@agnt5/sdk` package (no `agnt5.tool` subm
 - A timeout on `waitForUser`
 - `ctx.waitForSignal` on managed workers
 - `ctx.session.state` between pauses (run-scoped `ctx.get/set` only)
+- A resume method on `Client` (POST `/v1/workflows/resume/{runId}` with `fetch`)
 
 ## TypeScript pitfalls
 
@@ -184,6 +229,8 @@ tool names are exported from the root `@agnt5/sdk` package (no `agnt5.tool` subm
 | `new AskUserTool(ctx)` does not type-check | constructor takes `ContextImpl` | `ctx as ContextImpl` |
 | Approval never times out | no timeout support | add an operator-side deadline outside the run |
 | `waitForSignal` throws | unsupported on this runtime | webhook trigger or polling step |
+| Answer lands on the wrong question | resume sent while the run was in a durable sleep | resume only when `pendingQuestion()` returns metadata |
+| Resume or cancel returns 403 `INSUFFICIENT_SCOPES` | key has only the `run` scope | create it with `--scopes run,workflow` |
 
 ## Source
 

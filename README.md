@@ -88,8 +88,7 @@ Skills are grouped by the AGNT5 lifecycle: **build** it, **run** it, **improve**
 |-------|-------------|
 | `agnt5-scorers` | Pick built-in deterministic/LLM-as-judge scorers or write and deploy a custom `@scorer`. |
 | `agnt5-experiments` | Curate and version eval datasets, run a component or prompt against them, compare results, and gate CI. |
-| `agnt5-online-evals` | Sample and score production runs asynchronously, with alerting on quality drops. |
-| `agnt5-quality-cases` | Track a regression or production issue to a verified fix; automate it with the self-improvement loop. |
+| `agnt5-online-evals` | Score a sample of production runs in the background with live experiments. |
 
 ### Investigate
 

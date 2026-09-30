@@ -49,13 +49,18 @@ instance. Stream with `async for event in agent.stream("..."):` and check `event
 | Event type | When it fires |
 |---|---|
 | `agent.started` / `agent.completed` / `agent.failed` | Agent loop begins / ends with a final answer / errors |
-| `agent.iteration.started` / `agent.iteration.completed` | One reasoning loop |
-| `lm.content_block.started` / `.delta` / `.completed` | LLM response block streaming |
+| `lm.content_block.started` / `.delta` / `.completed` | LLM response block streaming (`block_type` is `text` or `thinking`) |
 | `tool_call.started` / `tool_call.completed` / `tool_call.failed` | A tool call |
 | `skill.loaded` | The agent loaded a SKILL.md (see `agnt5-agent-skills`) |
 
-TypeScript event names differ (`lm.message.delta`, `lm.thinking.*`, `lm.tool_call.*`) — see
-[references/typescript.md](references/typescript.md).
+`agent.iteration.started` / `.completed` are recorded on the run's events (the trace) but are not
+yielded by `agent.stream()`.
+
+These are the in-process names. When the agent runs as a worker component and a client reads
+its stream (`Client.stream_events`, SSE), the worker renames the content-block events to the
+cross-SDK names: `lm.message.start` / `.delta` / `.stop` for text and `lm.thinking.start` /
+`.delta` / `.stop` for thinking. Match those in client code. TypeScript uses the `lm.message.*`
+names in process as well — see [references/typescript.md](references/typescript.md).
 
 Inside a workflow, pass `context=ctx`: `await agent.run(task, context=ctx)`. With a context
 the agent loads and saves its conversation history automatically, scoped by `user_id`, else
@@ -197,8 +202,7 @@ is one object shared by every concurrent run of that agent; create it inside the
 when runs can overlap.
 
 Provider credentials (E2B, Daytona, Vercel, Northflank, Together), local vs deployed setup,
-the `sandbox-smoke` validation template, and troubleshooting:
-[references/sandbox-providers.md](references/sandbox-providers.md).
+and troubleshooting: [references/sandbox-providers.md](references/sandbox-providers.md).
 
 ## Multi-agent patterns
 

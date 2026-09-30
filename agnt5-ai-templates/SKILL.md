@@ -16,14 +16,55 @@ code: [references/typescript.md](references/typescript.md),
 
 ## First: is there a ready-made template?
 
+The CLI has no command that lists templates. The catalog is a JSON file with every template,
+its languages and versions:
+
+```bash
+curl -s https://templates.agnt5.com/templates/templates.json \
+  | jq -r '.templates | to_entries[] | "\(.key): \(.value.languages | keys | join(", "))"'
+```
+
+It lists `quickstart`, `weather-agent`, `code_reviewer`, `coding_agent`,
+`travel_booking_customer_service`, `tutor_agent` and `hitl_deep_research`, each in python,
+typescript and go. Read it before recommending a template by name; never guess one.
+
 ```bash
 agnt5 version update                                     # every time -- a stale CLI can mis-extract templates
 agnt5 create my-weather-agent --template python/weather-agent   # optional: --version v1.0.0 or name@v1.0.0
 ```
 
-The template catalog changes — check https://agnt5.com/docs/quickstart (and the templates
-section of the docs) before recommending one by name; never guess a template name. Generate
-from scratch (below) when nothing is a close match or the user wants a custom combination.
+The project is registered under the `name:` in the template's `agnt5.yaml` (for example
+`quickstart` or `agnt5-customer-service`), not the directory name you passed. To choose the
+name, scaffold with `--local`, edit `name:`, then link:
+`agnt5 init --new --name <name> --workspace <ws> -y`.
+
+Known template caveats — fix these right after scaffolding:
+
+- Every Go template, `python/quickstart`, `typescript/quickstart` and `python/weather-agent`
+  have a `deploy.resources` block in `agnt5.yaml`. It is not applied; delete it.
+- `python/weather-agent`: `agnt5.yaml` sets `deploy.dockerfile: ./Dockerfile`,
+  `ignore_file: .dockerignore` and `registry.url`, but the template ships neither file.
+  Without a root `Dockerfile` the deploy is a code bundle anyway and the missing ignore file
+  adds no exclusions, so delete those three settings rather than rely on them.
+- `typescript/quickstart`: the `digest` workflow calls its functions directly
+  (`await fetchTopIds(ctx, { limit })`). A direct call is not checkpointed and runs again on
+  every replay. Wrap each call in `ctx.step`, keyed when calls run concurrently, then check
+  it with `npx tsc --noEmit`:
+
+  ```typescript
+  const ids = await ctx.step('fetch_top_ids', () => fetchTopIds(ctx, { limit }));
+  const stories = await Promise.all(
+    ids.map((storyId) =>
+      ctx.step('fetch_story', () => fetchStory(ctx, { storyId }), { key: String(storyId) }),
+    ),
+  );
+  ```
+
+- `go/quickstart`: `main.go` picks `claude-3-5-haiku-20241022` when `ANTHROPIC_API_KEY` is
+  set and `gpt-5-mini` otherwise. Change `newSummarizerModel()` to the model you want.
+
+Generate from scratch (below) when nothing is a close match or the user wants a custom
+combination.
 
 ## Python project layout
 
@@ -82,15 +123,13 @@ language_version: "3.12"
 environment: dev
 
 worker:
-  command: "uv run python app.py"   # what `agnt5 dev` runs; inferred from the language when omitted
+  command: "uv run python app.py"   # what `agnt5 dev` and the deployed worker run; inferred from the language when omitted
 
-deploy:
-  resources:
-    memory: 512Mi
-    cpu: 500m
-  # optional: dockerfile, ignore_file, base_image, build_args, registry.url / registry.username
+# deploy:                           # optional: dockerfile, ignore_file, base_image, build_args, registry
 # variables: {}                     # optional key/value map
 ```
+
+Don't add `deploy.resources`: it is not applied (the platform sizes workers).
 
 Full schema and what gets bundled: `agnt5-deploy`. The managed Python worker image runs
 **Python 3.14** (`ghcr.io/agnt5dev/python-worker:3.14`), so pick dependencies with 3.14

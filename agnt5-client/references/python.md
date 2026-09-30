@@ -15,7 +15,7 @@ submit(component, input_data=None, component_type="function", metadata=None, ten
 get_status(run_id) -> StatusResponse            # .status, .is_complete, .is_running
 get_result(run_id) -> RunResponse
 wait_for_result(run_id, timeout=300.0, poll_interval=1.0) -> RunResponse
-get_events(run_id) -> EventsResponse            # iterable of Event(id, event_type, run_id, step_key, input_data, output_data, ...)
+get_events(run_id) -> EventsResponse            # iterable of Event(event_type, run_id, step_key, metadata, ...); input_data/output_data stay None
 stream(component, input_data=None, component_type="function", tenant=None, deployment_id=None,
        *, idempotency_key=None, wait_timeout=300.0, timeout=None) -> Iterator[str]
 stream_events(component, input_data=None, component_type="function", session_id=None, user_id=None, tenant=None,
@@ -80,6 +80,18 @@ RunError(message, run_id=None, error_code=None, attempts=None, max_attempts=None
 RunStatus: PENDING ENQUEUED QUEUED STARTED RUNNING COMPLETED FAILED CANCELLED PAUSED AWAITING_INPUT AWAITING_USER_INPUT TIMEOUT UNKNOWN
 ```
 
+A human-in-the-loop question and a durable sleep both report `RunStatus.PAUSED`; the
+`AWAITING_*` values are not reported by the gateway. `run()` returns at the first pause, and
+the gateway body carries no `status_code`, so 0.13.6 derives 500 for `paused`: `is_error` is
+`True` and `raise_for_status()` raises `RunError("Run failed with status: paused")`. Test
+`res.status == RunStatus.PAUSED` before `raise_for_status()`. `wait_for_result()` does not treat
+`paused` as finished; it polls until its timeout and returns a synthetic `TIMEOUT` result.
+`StatusResponse.is_complete` and `is_running` are both `False` for a paused run.
+
+`Event` maps `input_data`/`output_data`, but the gateway sends each event's payload as `data`,
+so those stay `None`; `event.metadata` is populated (that is where `pause_reason`,
+`pause_index` and `question` live).
+
 ## Patterns
 
 ```python
@@ -90,14 +102,21 @@ status = client.get_status(sub.run_id)
 if status.is_complete:
     result = client.get_result(sub.run_id)
 
-# answer a HITL pause (no client method in 0.13.6)
+# answer a HITL pause (no client method in 0.13.6); the key needs the `workflow` scope.
+# pending_question() is in agnt5-human-in-the-loop: it returns None while the run only sleeps.
 import httpx, os
-httpx.post(f"{client.gateway_url}/v1/workflows/resume/{run_id}",
-           headers={"X-API-KEY": os.environ["AGNT5_API_KEY"]}, json={"user_response": "approve"}).raise_for_status()
+headers = {"X-API-KEY": os.environ["AGNT5_API_KEY"]}
+if pending_question(client, run_id):
+    httpx.post(f"{client.gateway_url}/v1/workflows/resume/{run_id}",
+               headers=headers, json={"user_response": "approve"}).raise_for_status()
 
 # send a signal to a serverless workflow
 httpx.post(f"{client.gateway_url}/v1/runs/{run_id}/signals/payment.settled",
-           headers={"X-API-KEY": os.environ["AGNT5_API_KEY"]}, json={"payload": {"reference": ref}})
+           headers=headers, json={"payload": {"reference": ref}})
+
+# cancel (body optional; reason defaults to "manual"); also needs the `workflow` scope
+httpx.post(f"{client.gateway_url}/v1/runs/{run_id}/cancel",
+           headers=headers, json={"reason": "operator stop"}).raise_for_status()
 ```
 
 Large serverless outputs may come back as an `output_ref` inside the raw response (`_raw`);

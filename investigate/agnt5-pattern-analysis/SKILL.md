@@ -19,6 +19,26 @@ in 14% of runs for origin=`international`" is.
 Most interesting patterns are **not** visible in metrics. Error counts and latency charts get
 you to the right neighborhood; the pattern itself is usually found by reading raw traces.
 
+## Tools
+
+This skill uses the AGNT5 MCP tools. The CLI ships the server: after `agnt5 auth login`,
+register `agnt5 mcp` with your MCP client (Claude Code: `claude mcp add agnt5 -- agnt5 mcp`).
+Without MCP, the `agnt5` CLI covers part of the same ground from inside the project's linked
+directory:
+
+| MCP tool | CLI equivalent |
+|---|---|
+| `list_runs` | `agnt5 inspect runs ls` (`--component`, `--component-type`, `--status`, `--since`, `--limit`) |
+| `get_run_summary` | `agnt5 inspect runs describe <run-id>` (prints the trace ID) |
+| `get_trace_excerpt` / `get_trace` | `agnt5 inspect trace -r <run-id>` (`--verbose` for span attributes, `-o json`); it takes the run ID and only finds the project's 200 most recent runs |
+| `get_run_logs` | none that works: `agnt5 inspect logs -r <run-id>` currently returns 403, so use the MCP tool or the run page in Studio |
+| `list_deployments` | `agnt5 deployment list` |
+| `get_deployment_events` | `agnt5 deployment errors` (the project's latest deployment only) |
+| `get_analytics_dashboard`, `get_component_breakdown`, `get_error_breakdown`, `get_llm_usage`, `get_runs_timeseries`, `get_latency_timeseries` | none; Studio Analytics and Metrics |
+
+`list_runs`, `get_run_summary` and their CLI equivalents read run summaries, which exist only
+once a run has finished: runs still queued, running or paused are not in the population.
+
 ## Scope
 
 - One project, one time window. Default window: last 7 days. If the project has little
@@ -102,8 +122,10 @@ you can go further to confirm a lead.
   silent failure.
 - For wrong-output hunting in completed runs, focus on the final LLM output and the tool
   results that fed it.
-- If online evals exist, `list_scores` (by `component_name` and time window) finds low-scoring
-  runs quickly — then read those traces. Scores are discovery aids, not proof.
+- If online evals exist, their verdicts are recorded per run: the run page in Studio
+  (**Online evals** tab) or the per-run API in `agnt5-online-evals` (Results; it needs a
+  personal API key). `list_scores` does not return them. Check the verdicts for the runs you
+  sample; scores are discovery aids, not proof.
 
 While reading, keep notes per run: component, path taken, notable span (ID + field + quote),
 and any cohort attributes visible in inputs or metadata (tenant, tier, region, locale, input
@@ -230,9 +252,11 @@ exactly measurable, recommend (do not create) the follow-up:
   **online eval** (`agnt5-online-evals`) so it is counted continuously.
 - **Instrumentation** — the span attribute or log line that would make it filterable (e.g.
   record `tool_result_empty=true`, the prompt version, the tenant tier).
-- A **dataset** of the affected runs (`agnt5-experiments`) to regression-test the fix.
-- A **quality case** (`agnt5-quality-cases`) to track the fix to verified/shipped. Check
-  whether AGNT5 already surfaced it as a behavior topic before opening a new case.
+- A **regression dataset** of the affected runs, and an experiment that gates the fix
+  (`agnt5-experiments`): `agnt5 datasets create --name <name>`, then
+  `agnt5 datasets add-run <dataset-id> <run-id>` for each evidence run (MCP
+  `add_run_to_dataset_draft`), `agnt5 datasets publish <dataset-id>`, and run an experiment on
+  it before and after the fix.
 
 Observed spans (`capture_mode=observed`, automatic OpenAI / OpenAI Agents SDK / Google ADK
 capture) are best-effort and may be content-free under `metadata-only` capture — don't count

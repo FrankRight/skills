@@ -70,7 +70,38 @@ function webhookEnvelope(input: TriggeredRun | WebhookEnvelope): WebhookEnvelope
 Verified against the gateway's event dispatch and a live run; the docs' `event.body` at the
 top level is wrong. Key side effects off `event.data.event_type` +
 `event.data.idempotency_key` (or `event.id`), and put them in `ctx.step` — delivery is
-at-least-once and replays re-run bare code.
+at-least-once and replays re-run bare code. For an `event()` trigger the same outer record
+arrives with the published `payload` as `event.data` (no `WebhookEnvelope`), `event.id` =
+`event_id` and `event.source` = `source` (default `'api'`).
+
+## Publish an internal event
+
+Fields, targeting and the 202 receipt are in the SKILL.md (`POST /v1/events`). From
+TypeScript:
+
+```typescript
+interface EventReceipt {
+  event_run_id: string;
+  duplicate: boolean;
+  matched_count: number;
+  run_ids: string[];
+}
+
+async function publishSignup(userId: string): Promise<EventReceipt> {
+  const res = await fetch(`${process.env.AGNT5_GATEWAY_URL}/v1/events`, {
+    method: 'POST',
+    headers: { 'X-API-KEY': process.env.AGNT5_API_KEY!, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event_name: 'user.signed_up',
+      event_id: `signup-${userId}`,        // re-posting the same id returns duplicate: true
+      payload: { userId },
+      environment_ref: 'production',
+    }),
+  });
+  if (res.status !== 202) throw new Error(`publish failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as EventReceipt;
+}
+```
 
 ## Chat bots (Slack, Discord, Teams, Telegram)
 
@@ -140,9 +171,11 @@ const final = await client.waitForResult(sub.runId, 600_000);
 await client.workflow('onboarding_workflow').run({ userEmail }, { idempotencyKey: `onboard:${userId}` });
 ```
 
-`RunResponse`: `runId`, `status` (`'completed' | 'failed' | 'awaiting_input' | 'running' | ...`),
+`RunResponse`: `runId`, `status` (`'completed' | 'failed' | 'paused' | 'running' | ...`),
 `output`, `error`, `durationMs`, `traceId`, getters `isSuccess`, `isPending`, `isError`,
-`raiseForStatus()`. `client.events(component, input, opts)` streams SSE events. Always pass
+`raiseForStatus()`. A workflow that pauses (a question or a durable sleep) returns
+`status: 'paused'` with `isPending === true`; see `agnt5-client` before calling
+`waitForResult` on it. `client.events(component, input, opts)` streams SSE events. Always pass
 `idempotencyKey` from a stable business id. Full client surface: `agnt5-client`.
 
 ## Not available in TypeScript
@@ -152,6 +185,7 @@ await client.workflow('onboarding_workflow').run({ userEmail }, { idempotencyKey
   (`worker.registerAgents([bot])`)
 - `agnt5.chat` / `@agnt5/sdk/chat` import paths (root exports)
 - A typed envelope helper: define `TriggeredRun` / `WebhookEnvelope` yourself as above
+- A client method to publish events: POST `/v1/events` with `fetch` as above
 
 ## TypeScript pitfalls
 

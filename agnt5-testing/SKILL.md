@@ -16,7 +16,7 @@ schema, wrong environment.
 | 3. Local end to end | Real registration, schema, retries, tracing | `agnt5 dev` + `agnt5 run`; `agnt5 dev up` + `Client` |
 | 4. Deployed smoke | The exact build that will serve traffic | `agnt5 run --env`, `Client`, `client.eval` |
 | 5. Regression gate | Curated dataset, scored, pass-rate threshold | `agnt5 experiments run --wait --fail-on-gate` (`agnt5-experiments`) |
-| 6. Production quality | Sampled live runs, alerts | `agnt5-online-evals` |
+| 6. Production quality | Sampled live runs scored by a live experiment | `agnt5-online-evals` |
 
 ## Level 2: components without a worker
 
@@ -47,9 +47,13 @@ async def test_scorer():
     assert r.passed
 ```
 
-Fake a model by subclassing `agnt5.lm.LanguageModel` (`generate`, `stream`) and passing the
-instance as `Agent(model=...)`. `InMemorySandbox()` backs sandbox-using tools with a file map
-and echo execution. `timeout_ms` is enforced locally; `retries` are not.
+Fake a model by subclassing `agnt5.lm.LanguageModel` and passing the instance as
+`Agent(model=...)`. Implement both methods: `Agent.run()` calls `stream()` when the agent has no
+tools (the final text comes from the `LMCompleted` event) and `generate()` when it has tools. If
+`stream()` does not yield an `LMCompleted` with the text, `agent.run()` returns `''`. Working
+fake: `references/python.md`.
+`InMemorySandbox()` backs sandbox-using tools with a file map and echo execution. `timeout_ms`
+is enforced locally; `retries` are not.
 
 ### TypeScript (`references/typescript.md`)
 
@@ -71,8 +75,10 @@ it('scores', async () => {
 });
 ```
 
-`new Agent({ model: fakeModel, ... })` accepts any object with
-`generate(request): Promise<GenerateResponse>`. `InMemorySandbox`, `MemoryStateAdapter` +
+`new Agent({ model: fakeModel, ... })` accepts any `LanguageModel`: an object with
+`generate(request): Promise<GenerateResponse>` that returns `{ text, finishReason?, toolCalls? }`
+(the root `GenerateResponse` has no `id` or `model`; adding them fails `tsc` with TS2353).
+Working fake: `references/typescript.md`. `InMemorySandbox`, `MemoryStateAdapter` +
 `StateManager` cover sandbox and state. Type-check with `npx tsc --noEmit`; run `npx vitest run`.
 
 ### Go (`references/go.md`)
@@ -126,9 +132,13 @@ Studio while the dev worker runs.
 ## Level 4: smoke-test the deployed build
 
 ```bash
-agnt5 run onboarding --type workflow --input '{"email":"ada@example.com"}' --env preview
+agnt5 deployment list                  # ID of the deployment you just shipped
+agnt5 run onboarding --type workflow --input '{"email":"ada@example.com"}' --deployment-id <id>
 agnt5 run onboarding --type workflow --input '{...}' --deployment-id <id> --timeout 5m   # client-side limit; run continues
 ```
+
+Target the deployment by ID. `--env preview` currently answers 409 "environment has no active
+deployment" even when a preview deployment is running.
 
 From code (`agnt5-client`): `Client(deployment_id=...)` / `new Client({ deploymentId })` /
 `agnt5.WithClientDeploymentID`, then `client.run(...)`, or score in one call:
@@ -139,13 +149,16 @@ from agnt5.eval import Correctness
 client = Client()
 r = client.eval(component="support_agent", component_type="agent", deployment_id=candidate,
                 input_data={"message": "Where is order #1234?"}, expected="in transit",
-                scorers=["contains", Correctness(model="openai/gpt-4o-mini")])
+                scorers=[{"name": "contains", "config": {"pattern": "in transit"}},
+                         Correctness(model="openai/gpt-4o-mini")])
 assert r.passed, [s.explanation for s in r.scores]
 ```
 
 `client.batch_eval(...)` / `client.batchEval(...)` / Go `client.BatchEval(...)` run a list
 with `max_concurrency` (start at 3-5). Deterministic scorers first; judge scorers cost money
-and must not run on gpt-6 models (`agnt5-scorers`).
+and must not run on gpt-6 models. A bare `"contains"` sends no `pattern`, and Python and
+TypeScript workers score it as `config_error`; the built-ins that need config are listed in
+`agnt5-scorers`.
 
 ## Level 5: regression datasets and CI gates
 

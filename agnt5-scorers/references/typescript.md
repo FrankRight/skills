@@ -6,11 +6,18 @@ the SDK surface differs.
 
 ## Built-in deterministic and LLM-as-judge scorers
 
-Same names, same `--builtin-scorer <name|json>` usage. The TypeScript SDK also exports the
-built-ins as plain functions you can call locally against a `ScorerRequest`: `exactMatch`,
-`contains`, `regexMatch`, `jsonValid`, `jsonSchema`, `numericRange`, `levenshtein`,
-`structuredAssertions`, and async `llmJudge`, `correctness`, `faithfulness`, `goalSuccess`,
-`agentJudge` (config through `request.config`, e.g. `{ pattern }`, `{ schema }`, `{ criteria, model }`).
+Same names, same `--builtin-scorer <name|json>` usage, and the same required config (table in the
+SKILL.md). The TypeScript SDK also exports the built-ins as plain functions you can call locally
+against a `ScorerRequest`: `exactMatch`, `contains`, `regexMatch`, `jsonValid`, `jsonSchema`,
+`numericRange`, `levenshtein`, `structuredAssertions`, and async `llmJudge`, `correctness`,
+`faithfulness`, `goalSuccess`, `agentJudge` (config through `request.config`, e.g. `{ pattern }`,
+`{ schema }`, `{ criteria, model }`).
+
+Pass the config in code too: `scorers: [{ name: 'contains', config: { pattern: 'in transit' } }]`.
+The local functions are more lenient than a deployed worker: without `pattern`, `runScorer('contains', ...)`
+falls back to `expected` and `runScorer('regex_match', ...)` matches everything. A deployed
+TypeScript worker runs deterministic built-ins in the native core, where a missing `pattern` is a
+config error.
 
 ### SDK evaluator presets (for `client.eval()` / `client.batchEval()`)
 
@@ -20,7 +27,7 @@ import { Correctness, Helpfulness, Faithfulness, LLMJudge } from '@agnt5/sdk';
 const scorers = [
   new Correctness(),
   new Helpfulness({ model: 'openai/gpt-4o' }),
-  new Faithfulness({ contextFields: ['retrieved_chunks'] }),
+  new Faithfulness({ contextFields: ['input.retrieved_chunks'] }),   // selectors start with input., output. or expected.
   new LLMJudge({ criteria: 'Is the response under 50 words?', model: 'openai/gpt-4o-mini' }),
 ];
 ```
@@ -73,8 +80,11 @@ export const citesOrderId = scorer('cites_order_id', 'Reply must cite the order 
   something you can declare from TypeScript.
 - Calling `scorer(...)` registers the handler in `ScorerRegistry`; the worker publishes it as a
   `scorer` component on `worker.run()`. Import the module from `app.ts`
-  (`import './src/scorers.js'`) or it never registers. After deploy attach by ID:
-  `agnt5 experiments create ... --scorer-id <scorer-id>`.
+  (`import './src/scorers.js'`) or it never registers.
+- Deploying does not create a project scorer. Get a scorer ID with MCP `create_scorer`
+  (`type: "deployed"`, `deployment_id`, `component_name: "cites_order_id"`) and
+  `publish_scorer_version`, then `agnt5 experiments create ... --scorer-id <scorer-id>` (steps in
+  the SKILL.md). A component ID is accepted at create and fails at `experiments run` with 404.
 
 Test locally without deploying:
 
@@ -135,7 +145,8 @@ Identical CLI (`agnt5 scores list ...`, `agnt5 scores evidence <score-id> ...`).
 | Judge preset ignores the input | `includeInput` defaults to `false` | pass `{ includeInput: true }` |
 | Handler returns a plain object and Studio shows no label | works structurally, but `label`/`metadata` easy to drop | return `new ScorerResult({...})` |
 | `trace` empty for an item | dataset item has no `events` | import items from runs (`agnt5 datasets add-run`) |
-| `llmJudge` fails with "Model must include provider prefix" | bare `model: 'gpt-4o-mini'` in config | use `openai/gpt-4o-mini` |
+| Judge calls OpenAI although you set a Claude model | a bare preset `model` means provider `openai` | `model: 'anthropic/<model>'` on presets; `provider` plus a bare `model` in raw configs |
+| `config_error` from `contains` in `client.eval` | bare `'contains'` sends no `pattern` | `{ name: 'contains', config: { pattern } }` |
 
 ## Source
 

@@ -112,7 +112,8 @@ For platform-tracked gates keep using `agnt5 experiments run ... --wait --fail-o
 
 There is no dataset/experiment API on the TypeScript `Client` (no `datasets`, `experiments`
 or `reports` methods). Use the CLI commands in the SKILL.md, the REST endpoints, or the AGNT5
-MCP tools (`create_eval_dataset`, `add_run_to_dataset_draft`, `run_experiment`, ...).
+MCP tools from `agnt5 mcp` (`create_eval_dataset`, `add_run_to_dataset_draft`, `run_experiment`,
+...; setup in the SKILL.md).
 `client.getEvents(runId)` returns the journal events of a run (`{ events: [{ eventType, data,
 sequence, correlationId }], runId }`) if you need to build dataset `events` yourself.
 
@@ -131,7 +132,8 @@ sequence, correlationId }], runId }`) if you need to build dataset `events` your
 | `ECONNREFUSED 127.0.0.1:34181` in CI | default gateway is localhost | set `AGNT5_GATEWAY_URL` / `gatewayUrl` |
 | Eval hits the wrong deployment | ambient `AGNT5_DEPLOYMENT_ID` ignored for execution | pass `deploymentId` in options |
 | `timeout: 60` fails everything instantly | milliseconds, not seconds | `timeout: 60_000` |
-| Judge presets error with "provider prefix" | bare model name | `model: 'openai/gpt-4o-mini'` |
+| Judge preset calls OpenAI although you set a Claude model | a bare preset `model` means provider `openai` | `model: 'anthropic/<model>'` |
+| `config_error` from a built-in such as `contains` | bare name sends no config | `{ name: 'contains', config: { pattern: 'in transit' } }` (`agnt5-scorers`) |
 | Run status shows `EXECUTION_ERROR` for every failure | worker collapses error codes | read `item.error` text / worker logs |
 | `agnt5 run <function>` exits 1 during a smoke test although the run later passes | CLI prints first failed attempt | check `agnt5 inspect runs describe` |
 

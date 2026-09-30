@@ -154,6 +154,12 @@ await ctx.sleep(24 * 60 * 60, name="wait_24h")
 await ctx.step(send_follow_up, user_id)
 ```
 
+While it sleeps the run reports status `paused`, the same status as a human-in-the-loop
+question, and `agnt5 run` / `client.run()` return at the sleep with `status: paused`. The
+run's newest `workflow.paused` event has `data.reason: "timer"`. Don't send a resume to a
+sleeping run: it is accepted and its answer goes to the next question unseen
+(`agnt5-human-in-the-loop`).
+
 ## State
 
 | Scope | Access | Persists |

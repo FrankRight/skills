@@ -1,6 +1,6 @@
 ---
 name: agnt5-scorers
-description: Score AGNT5 component outputs - pick built-in deterministic checks (exact_match, json_schema, tool_called, step_efficiency, ...), built-in LLM-as-judge presets (correctness, faithfulness, goal_success, agent_judge), or write and deploy a custom @scorer (ScorerContext/ScorerRequest), including trace assertions for glassbox checks and inspecting scores. Use when defining what "correct" means for an experiment or online eval, writing a custom scorer, or reading scores/evidence for a run.
+description: Score AGNT5 component outputs - pick built-in deterministic checks (exact_match, json_schema, tool_called, step_efficiency, ...) with the config each one requires, built-in LLM-as-judge presets (correctness, faithfulness, goal_success, agent_judge) and their provider/model naming, or write and deploy a custom @scorer (ScorerContext/ScorerRequest) and register it as a project scorer (MCP create_scorer + publish_scorer_version) to get the scorer ID experiments need; trace assertions for glassbox checks; inspecting scores. Use when defining what "correct" means for an experiment or online eval, writing a custom scorer, fixing a config_error from a built-in scorer, or reading scores/evidence for a run.
 ---
 
 # AGNT5 Scorers
@@ -8,8 +8,8 @@ description: Score AGNT5 component outputs - pick built-in deterministic checks 
 > **TypeScript or Go?** This file shows the Python API. Read [references/typescript.md](references/typescript.md) or [references/go.md](references/go.md) first: same sections, the exact signatures for that SDK, and what it does not support.
 
 A **scorer** returns a score (0.0-1.0), a pass/fail verdict, and an optional explanation for
-one component output. `agnt5-experiments` and online evals attach one or more scorers and run
-them against every dataset item.
+one component output. `agnt5-experiments` runs scorers against every item of a dataset;
+`agnt5-online-evals` runs them on sampled production runs.
 
 ## Three scorer classes — pick the cheapest that works
 
@@ -42,7 +42,31 @@ agnt5 experiments create --name support-agent-quality \
   --builtin-scorer '{"name":"max_llm_calls","config":{"max":5}}'
 ```
 
-Bare name = default behavior; JSON object = name + config.
+A bare name works only for built-ins without required config: `exact_match`, `json_valid`,
+`levenshtein`, `no_errors`, `tool_failure_recovered`, `step_efficiency`, `plan_quality`,
+`plan_adherence`, `correctness`, `goal_success`. Every other built-in needs the
+`{"name": ..., "config": {...}}` form:
+
+| Built-in | Required config |
+|---|---|
+| `contains`, `regex_match` | `pattern` (non-empty string) |
+| `json_schema` | `schema` (JSON Schema object) |
+| `numeric_range` | `min` and/or `max` (numbers) |
+| `structured_assertions` | `assertions` (non-empty array) |
+| `tool_called`, `tool_not_called` | `tool` |
+| `tool_sequence`, `tool_sequence_in_order`, `tool_sequence_exact`, `tool_sequence_any_order`, `tool_trajectory` | `tools` (array of tool names) |
+| `tool_params_match` | `tool` and `params` (object) |
+| `max_tool_calls`, `max_llm_calls`, `max_tokens` | `max` |
+| `duration_under` | `max_ms` |
+| `state_equals` | `name` and `expected` |
+| `llm_judge` | `criteria` (or `prompt_template`) and `model` |
+| `agent_judge` | `model` |
+| `faithfulness` | `context_fields` (selectors starting with `input.`, `output.` or `expected.`) |
+
+`agnt5 experiments create` rejects a bare name for these. `client.eval()` / `batch_eval()` send it
+without config, and the check fails or checks nothing: `contains` returns `config_error` with
+`Invalid contains config: invalid type: null`. Pass the same `{name, config}` object in code:
+`scorers=[{"name": "contains", "config": {"pattern": "in transit"}}]`.
 
 ## Built-in LLM-as-judge scorers
 
@@ -54,8 +78,13 @@ tool-call evidence). Needs a provider credential configured as a project secret 
 
 ```bash
 --builtin-scorer correctness \
---builtin-scorer '{"name":"llm_judge","config":{"criteria":"Is the response concise and actionable?","model":"openai/gpt-4o-mini"}}'
+--builtin-scorer '{"name":"llm_judge","config":{"criteria":"Is the response concise and actionable?","provider":"openai","model":"gpt-4o-mini"}}'
 ```
+
+Judges run in your worker. In raw JSON configs, put the provider in `provider` and a bare name in
+`model`: a Python worker sends `"model": "openai/gpt-4o-mini"` to OpenAI as the model name and the
+judge scores 0. The SDK preset objects below take `provider/model` instead; a bare name there
+means OpenAI.
 
 ### SDK evaluator presets (for `client.eval()`/`batch_eval()`, see `agnt5-experiments`)
 
@@ -65,7 +94,7 @@ from agnt5.eval import Correctness, Helpfulness, Faithfulness
 scorers = [
     Correctness(),
     Helpfulness(model="openai/gpt-4o"),
-    Faithfulness(context_fields=["retrieved_chunks"]),
+    Faithfulness(context_fields=["input.retrieved_chunks"]),   # selectors start with input., output. or expected.
 ]
 ```
 
@@ -111,9 +140,7 @@ async def cites_order_id(ctx: ScorerContext, request: ScorerRequest) -> ScorerRe
 - Custom scorers register and deploy with your worker like any component:
   `Worker(..., scorers=[cites_order_id])`. In explicit mode only the scorers you list are
   registered (the built-in deterministic and judge names are added automatically);
-  `Worker(auto_register=True)` registers every `@scorer` it discovers. After deploy, attach
-  by ID: `agnt5 experiments create ... --scorer-id <scorer-id>` (repeatable). The AGNT5 MCP
-  tools `create_scorer` / `publish_scorer_version` manage versions.
+  `Worker(auto_register=True)` registers every `@scorer` it discovers.
 
 Test locally without deploying:
 
@@ -124,6 +151,10 @@ from agnt5 import ScorerRequest, run_scorer
 print(asyncio.run(run_scorer("cites_order_id",
       ScorerRequest(output="Refund for order 42 issued", input={"order_id": "42"}))))
 ```
+
+`run_scorer` resolves your `@scorer`s, `structured_assertions` and the judge built-ins. Other
+deterministic built-ins run in the worker's native core, so `run_scorer("exact_match", ...)` raises
+`ValueError: Scorer not found`; call the `agnt5.eval` functions instead.
 
 `agnt5.eval` also ships the deterministic scorers as plain functions for tests and for use
 inside custom scorers: `exact_match(input, case_sensitive=None)`, `contains(input, pattern)`,
@@ -139,6 +170,23 @@ Two `ScorerResult` types exist: `agnt5.ScorerResult` (Python dataclass, what a d
 `@scorer` returns; also exported as `agnt5.eval.ScorerResultPy`) and `agnt5.eval.ScorerResult`
 (the Rust type the local functions return). Bridge them with
 `ScorerResult(score=r.score, passed=r.passed, explanation=r.explanation)`.
+
+### Get a scorer ID for experiments
+
+Deploying does not create a project scorer, so a custom scorer has no scorer ID yet. Create one
+with the AGNT5 MCP tools, then pass its `id` to `--scorer-id`:
+
+1. `create_scorer` with `type: "deployed"`, `deployment_id` (the deployment that registered the
+   scorer), `component_name: "cites_order_id"`, and `name`.
+2. `publish_scorer_version` with the returned scorer ID.
+3. `agnt5 experiments create ... --scorer-id <scorer-id>` (repeatable).
+
+The component ID from `agnt5 components` is not a scorer ID: `experiments create` accepts it and
+`experiments run` then fails with 404. An online eval also needs input requirements on the first
+published version, which only the REST API can set (`agnt5-online-evals`).
+
+The MCP tools come from `agnt5 mcp`, an MCP server over stdio that uses your CLI login. Register it
+with your MCP client, for example `claude mcp add agnt5 -- agnt5 mcp` in Claude Code.
 
 ## Trace assertions (glassbox testing)
 
@@ -170,13 +218,14 @@ returns score = proportion of assertions passed.
 agnt5 scores list --run-id <run-id>
 agnt5 scores list --run-id <run-id> --scorer-id <scorer-id>
 agnt5 scores list --component-name support_agent --since 2h
-agnt5 scores list --root-run-id <root-run-id>            # live production scores (online evals)
+agnt5 scores list --root-run-id <root-run-id>
 agnt5 scores evidence <score-id> --include scorer_input,scorer_output,evidence
 ```
 
 Filters on `scores list`: `--run-id`, `--run-item-id`, `--scorer-id`, `--scorer-version-id`,
 `--subject-type`, `--subject-id`, `--session-id`, `--root-run-id`, `--component-name`,
-`--component-type`, `--journal-id`, `--span-id`, `--since`, `--until`.
+`--component-type`, `--journal-id`, `--span-id`, `--since`, `--until`. The MCP equivalents are
+`list_scores` and `get_score_evidence`. For online-eval results see `agnt5-online-evals`.
 
 ## Source
 

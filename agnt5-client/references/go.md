@@ -71,6 +71,12 @@ type ClientError struct { Method, URL string; StatusCode int; Body string }     
 RunStatusUnknown`. `WaitForResult` returns a synthetic `timeout` response when the deadline
 passes; the run keeps executing. `DecodeOutput` returns `io.EOF` for a missing/null output.
 
+A human-in-the-loop question and a durable sleep both report `agnt5.RunStatusPaused`
+(`RunStatusAwaitingUserInput` is not reported). `Run` returns at the first pause with
+`IsPending() == true` and `RaiseForStatus() == nil`; `StatusResponse.IsComplete()` counts
+`paused` as finished, so `WaitForResult` returns at once with `Status == RunStatusPaused`.
+Branch on `res.Status` before decoding output. `GetEvents` items keep `Data` and `Metadata`.
+
 ## Patterns
 
 ```go
@@ -78,9 +84,12 @@ sub, err := client.Submit(ctx, "generate_report", map[string]any{"report_id": id
     agnt5.WithSubmitComponentType(agnt5.ComponentTypeWorkflow), agnt5.WithSubmitIdempotencyKey("report:"+id))
 res, err := client.WaitForResult(ctx, sub.RunID, 10*time.Minute, 2*time.Second)
 
-// resume a paused workflow with an approval decision, then read the final result
+// resume a paused workflow with an approval decision (the key needs the `workflow` scope).
+// Check first that the newest workflow.paused is a question, not a durable sleep:
+// pendingQuestion() in agnt5-human-in-the-loop references/go.md.
 _, err = client.ResumeWorkflow(ctx, runID, "approve")
-res, err = client.WaitForResult(ctx, runID, 5*time.Minute, time.Second)
+res, err = client.WaitForResult(ctx, runID, 5*time.Minute, time.Second) // returns at the next pause too
+_, err = client.CancelRun(ctx, runID, "operator stop")                  // {"reason": ...}; `workflow` scope too
 
 // stream an agent reply
 err = client.Stream(ctx, "support_agent", map[string]any{"message": "hi"}, func(chunk string) error {
@@ -88,5 +97,31 @@ err = client.Stream(ctx, "support_agent", map[string]any{"message": "hi"}, func(
 }, agnt5.WithRunComponentType(agnt5.ComponentTypeAgent), agnt5.WithRunSessionID("s1"))
 ```
 
-There is no `SendSignal` method; use `WithRunHeaders`-style raw HTTP against
-`POST /v1/runs/{run_id}/signals/{name}` with `{"payload": ...}`.
+There is no `SendSignal` method; POST the signal yourself (`workflow`-scoped key):
+
+```go
+func sendSignal(ctx context.Context, runID, name string, payload any) error {
+    body, err := json.Marshal(map[string]any{"payload": payload})
+    if err != nil {
+        return err
+    }
+    req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+        os.Getenv("AGNT5_GATEWAY_URL")+"/v1/runs/"+runID+"/signals/"+name, bytes.NewReader(body))
+    if err != nil {
+        return err
+    }
+    req.Header.Set("X-API-KEY", os.Getenv("AGNT5_API_KEY"))
+    req.Header.Set("Content-Type", "application/json")
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK { // 200 {"run_id", "signal_id", "resumed", ...}
+        return fmt.Errorf("signal %s: %s", name, resp.Status)
+    }
+    return nil
+}
+```
+
+`resumed` in the response is `true` when the signal woke a run paused on it.

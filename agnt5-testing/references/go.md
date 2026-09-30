@@ -72,8 +72,8 @@ res, err = reg.Run(ctx, "correctness", agnt5.ScorerRequest{Output: "42", Expecte
 // trace assertions
 tr := agnt5.TraceScorer(events, []agnt5.TraceAssertion{
     agnt5.MaxTokens(2000), agnt5.MaxLMCalls(4), agnt5.NoErrors(), agnt5.DurationUnder(15*time.Second),
-    agnt5.EventSequence([]string{"agent.started", "tool.completed", "agent.completed"}),
-    agnt5.StepMemoized("load-order"), agnt5.EventCount("tool.completed", 1),
+    agnt5.EventSequence([]string{"agent.started", "tool_call.completed", "agent.completed"}),
+    agnt5.StepMemoized("load-order"), agnt5.EventCount("tool_call.completed", 1),
 })
 ```
 
@@ -108,7 +108,10 @@ if err := res.RaiseForStatus(); err != nil { t.Fatal(err) }
 
 ev, err := client.Eval(ctx, agnt5.EvalRequest{Component: "support_agent", ComponentType: agnt5.ComponentTypeAgent,
     Input: map[string]any{"message": "Where is order 42?"}, Expected: "in transit",
-    Scorers: agnt5.NormalizeEvalScorers("contains", agnt5.Correctness{})})
+    Scorers: agnt5.NormalizeEvalScorers(
+        agnt5.EvalScorerSpec{Name: "contains", Config: map[string]any{"pattern": "in transit"}}, // built-ins that need config
+        agnt5.Correctness{},
+    )})
 ```
 
 Guard these with a build tag or `testing.Short()` so `go test ./...` stays offline.

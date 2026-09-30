@@ -22,9 +22,11 @@ Managed Go workers are **built at pod start**: the image runs `go mod download` 
 3. Vendoring is unnecessary; all modules resolve through the proxy at build time (network
    inside the build is required — not verified for private modules; assume they need
    `GOPRIVATE` + credentials as secrets).
-4. First deploy, eval-worker start and every cold replica pay the build time. Check
-   `agnt5 deployment status --watch` until Ready before `agnt5 run --env`, experiments or
-   webhooks tests; "connection refused"/no-worker errors during that window are not bugs.
+4. Every new deployment — `agnt5 deploy`, a promotion, a rollback — plus eval-worker starts
+   and cold replicas pay the build time (a promotion creates a new deployment with new
+   workers). Check `agnt5 deployment status --watch` until Ready before `agnt5 run`,
+   experiments or webhooks tests; "connection refused"/no-worker errors during that window
+   are not bugs.
 
 `agnt5.yaml` (`language: go`, `worker.command: "go run ."`) is what the platform executes after
 building. Keep `main.go` at the module root so `go run .` works.
@@ -41,6 +43,8 @@ agnt5 secrets set --name OPENAI_API_KEY --type api_key --environment <environmen
 ```
 
 The secret name must equal the env var your code reads (`os.Getenv("OPENAI_API_KEY")`).
+Workers read secrets when they start, so after setting or changing one, deploy again —
+running workers keep the old value.
 Studio **Settings → Integrations** provider credentials rely on the SDK's provider
 auto-resolution, which Go does not have; whether they are also exported as env vars to a Go
 worker was not verified — use `agnt5 secrets set` for Go. The built-in LLM judge scorers
@@ -60,16 +64,28 @@ worth knowing: pull dispatch (`AGNT5_WORKER_MODE=pull`, 0.8.0+), concurrency fro
 `agnt5 deploy` bounds runs; honour `ctx.Done()` in long loops regardless (how the platform
 limit surfaces inside a Go handler was not verified).
 
-Logs: `ctx.Logger()` lines are run-scoped (`agnt5 inspect logs -r`); `log.Printf`/`slog`
-output goes to the container stdout (`agnt5 logs <deployment-id> --follow`). OTLP export and
-core metrics: `agnt5-observe/references/go.md`.
+The platform also sets `AGNT5_ACTIVATION_ARTIFACT_SHA256` for deployed workers, so the
+"durable activation degraded" warning you see under `agnt5 dev`
+(`agnt5-project-init/references/go.md`) does not apply to them.
+
+Logs from a deployed Go worker:
+
+| You write | Where you can read it |
+|---|---|
+| `ctx.Logger().Info(...)` | the run's logs: MCP `get_run_logs`, or the run in Studio (`agnt5 inspect logs -r` currently returns 403) |
+| `slog.InfoContext(ctx, ...)` with `agnt5.NewSlogHandler` installed | the run's logs, same as above |
+| `log.Printf`, `fmt.Println`, `slog.Info` without a context | nowhere after deploy — not in the run's logs, `agnt5 logs <deployment-id>` (the platform's lifecycle log) or `agnt5 deploy debug --logs` while the worker is healthy. Locally they print in the `agnt5 dev` terminal. |
+| anything printed just before a crash | `agnt5 deploy debug <deployment-id> --logs`, Pod Status → last output line |
+
+So log anything you need after deploy through `ctx.Logger()` or `NewSlogHandler`. OTLP export
+and core metrics: `agnt5-observe/references/go.md`.
 
 ## Verify a Go deployment
 
 ```bash
 agnt5 deployment status --watch                 # wait for Ready (build time!)
-agnt5 deploy debug <deployment-id> --logs       # build errors appear here
-agnt5 run my_workflow --type workflow --input '{"message": "..."}' --env production
+agnt5 deploy debug <deployment-id> --logs       # build errors and crash output appear here
+agnt5 run my_workflow --type workflow --input '{"message": "..."}' --deployment-id <deployment-id>
 ```
 
 Build failures to recognise in the debug log: `missing go.sum entry` (tidy and redeploy),
@@ -79,7 +95,8 @@ import path mismatch), compile errors that `go build ./...` would have caught lo
 ## Calling the deployed worker
 
 `agnt5.NewClient("", agnt5.WithAPIKey(key))` with a service key from
-`agnt5 service-keys create --name <name> --project <project-id> [--environment <env>]`;
+`agnt5 service-keys create --name <name> --project <project-id> [--environment <environment-id>]`
+(an environment ID — `env_id` in `agnt5 deployment list -o json` — not a name);
 `agnt5.WithClientDeploymentID(id)` pins a deployment. Details: `agnt5-client`.
 
 ## Not available in Go
@@ -92,8 +109,10 @@ of third-party SDK calls.
 
 - Deploying with an untidy `go.sum` or a `go` directive above 1.26.8 fails only after the pod
   starts building — run `go mod tidy && go build ./...` first, every time.
-- Running `agnt5 run --env production` or an experiment before Ready looks like a broken
-  worker; it is the build.
+- Running `agnt5 run` or an experiment against a deployment before it is Ready looks like a
+  broken worker; it is the build.
+- Diagnostics written with `log.Printf` or `fmt` are invisible once deployed; use
+  `ctx.Logger()`.
 - Bare model names and explicit `APIKey` are required (`"openai/gpt-4o-mini"` is a 400 in
   production exactly as locally).
 - Reasoning models: Go agents with tools fail on gpt-6 over Chat Completions;

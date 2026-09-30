@@ -12,10 +12,17 @@ install/auth (step 0 of the SKILL.md) is language-independent.
 
 ## 1. Create or link (Go)
 
+There is no blank Go scaffold: `agnt5 create --language go` and `agnt5 init --language go`
+fail with "scaffolding for language … is not supported yet". Two paths work:
+
 ```bash
-agnt5 create my-project --language go              # blank Go starter, registered on AGNT5
-agnt5 create my-digest --template go/quickstart    # from a template (agnt5-ai-templates)
-agnt5 init --language go                            # existing directory
+# A. Start from the quickstart template (agnt5-ai-templates covers the others)
+agnt5 create my-project --template go/quickstart --local
+# edit agnt5.yaml: name: my-project   (otherwise the project registers as "quickstart")
+cd my-project && agnt5 init --new --name my-project --workspace <ws> -y
+
+# B. Write main.go, go.mod, agnt5.yaml yourself (layout below), then link the directory
+agnt5 init --new --name my-project --workspace <ws> -y
 ```
 
 Layout the templates use (`agnt5-ai-templates/references/go.md` has the full version):
@@ -39,12 +46,10 @@ environment: dev
 
 worker:
   command: "go run ."
-
-deploy:
-  resources:
-    memory: 512Mi
-    cpu: 500m
 ```
+
+The Go templates also carry a `deploy.resources` block; delete it — it is not applied
+(`agnt5-deploy`).
 
 ## 2. Dependencies and `.env`
 
@@ -72,7 +77,23 @@ agnt5 dev -v
 picks them up — never hardcode them. Optional knobs: `AGNT5_MAX_CONCURRENCY` (or
 `agnt5.WithMaxConcurrency(16)`), `AGNT5_WORKER_MODE` (`pull` default since 0.8.0; `push` to
 opt back in). A healthy start logs `Connected to coordinator` and the registered components
-(`agnt5 components` lists them).
+(`agnt5 components --dev` lists them).
+
+A local Go worker also prints:
+
+```
+[WARN] agnt5 durable activation degraded: activation artifact identity is unavailable; configure activation_artifact_sha256; legacy checkpoints remain enabled
+```
+
+This is expected under `agnt5 dev` and needs no action. The platform sets the deployment's
+artifact identity (`AGNT5_ACTIVATION_ARTIFACT_SHA256`) only for deployed workers. Without it
+the SDK falls back to its own step checkpoints, so `Step`/`Task` results are still reused on
+replay. One visible difference: a local `ctx.Sleep` waits inside the worker process, so the
+run shows `assigned` rather than `paused` while it sleeps.
+
+What you see where, locally: `fmt`/`log` output and your own `slog` handler print in the
+`agnt5 dev` terminal (`agnt5 dev logs` when detached). `ctx.Logger()` lines do not print
+there; they go to the run's logs (MCP `get_run_logs`, Studio), see `agnt5-observe`.
 
 Minimal `main.go`:
 
@@ -108,7 +129,7 @@ Identical CLI: `agnt5 run my_workflow --type workflow --input '{"message": "..."
 | Component missing in Studio | not registered in `main()`; Go has no import-side-effect registration |
 | Worker exits immediately, no components | `worker.Run` returned an error you did not log; wrap it in `log.Fatal` |
 | Tool runs with empty arguments | `NewTool` without `WithToolSchema` — the model sees no parameters |
-| Anything else | `agnt5 dev -v`; the SDK logs via `log`/`slog` to stdout |
+| Anything else | `agnt5 dev -v`; read the worker output in the terminal (`agnt5 dev logs` when detached) |
 
 Unit tests without a runtime: `agnt5.StaticModel{Content: "..."}` and
 `agnt5.ScriptedModel{Responses: []agnt5.GenerateResponse{...}}` satisfy `LanguageModel`;

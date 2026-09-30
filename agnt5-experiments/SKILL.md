@@ -59,10 +59,16 @@ agnt5 datasets upload-csv <dataset-id> --file examples.csv \
 
 Other CSV flags: `--metadata-column`, `--events-column`, `--tags-column`,
 `--source-run-id-column`, `--source-ref(-column)`, `--delimiter`, `--no-header` (columns by
-zero-based index). Or Studio → project → **Evaluate → Datasets**. From Claude with the AGNT5
-MCP connected: `create_eval_dataset`, `add_run_to_dataset_draft`,
-`add_manual_dataset_example`, `import_dataset_csv`, `preview_dataset_dedup` /
-`apply_dataset_dedup`, `publish_dataset_version`.
+zero-based index). Or Studio → project → **Evaluate → Datasets**.
+
+From an MCP client, the same operations are the tools `create_eval_dataset`,
+`add_run_to_dataset_draft`, `add_manual_dataset_example`, `import_dataset_csv`,
+`preview_dataset_dedup` / `apply_dataset_dedup`, `publish_dataset_version`, `create_experiment`,
+`run_experiment`, `get_experiment_run_summary`, `list_experiment_failures` and
+`create_regression_dataset_from_run`. They come from `agnt5 mcp`, an MCP server over stdio that
+uses your CLI login; register it with your client, for example
+`claude mcp add agnt5 -- agnt5 mcp` in Claude Code. `--services evals,experiments,scorers` narrows
+the tool list but drops `create_regression_dataset_from_run` and `compare_experiment_runs`.
 
 ### Deduplicate and publish
 
@@ -107,6 +113,14 @@ Required for create: `--name`, `--dataset-id`, `--dataset-version-id`, a target
 (`--target-type component|deployment|prompt` with the matching IDs), and at least one
 `--builtin-scorer <name|json>` or `--scorer-id <uuid>` (both repeatable). `run` also takes
 `--experiment-version-id` and `--config`. Full flag list: `agnt5 experiments create --help`.
+
+- Built-ins such as `contains`, `json_schema` or `tool_called` need the JSON form with their
+  config, e.g. `--builtin-scorer '{"name":"contains","config":{"pattern":"refund"}}'`; create
+  rejects the bare name. The full table is in `agnt5-scorers`.
+- `--scorer-id` takes a **project scorer** ID. Deploying a custom `@scorer` does not create one:
+  create it with MCP `create_scorer` (`type: "deployed"`, `deployment_id`, `component_name`) and
+  `publish_scorer_version` (`agnt5-scorers`). A component ID is accepted here and then fails at
+  `experiments run` with 404.
 
 ## 3. Inspect and compare
 
@@ -153,15 +167,27 @@ agnt5 experiments runs regression-dataset <run-id> --name order-bugs --run-item-
 ```
 
 Builds a dataset from the failed items, creates a regression experiment over it, and (with
-`--start-run`) kicks off the first rerun immediately. Feeds `agnt5-quality-cases`.
+`--start-run`) kicks off the first rerun immediately. MCP: `create_regression_dataset_from_run`.
+Rerun that experiment against each fix candidate (`--deployment-id`) until the gate passes.
+
+A failing **production** run is not an experiment run: add it to a dataset instead, with the
+answer it should have given, then publish a version and run the experiment:
+
+```bash
+agnt5 datasets add-run <dataset-id> <run-id> --expected-output '{"answer": "Order 42 ships Monday"}'
+agnt5 datasets publish <dataset-id> --description "Adds the order-42 regression"
+```
 
 ## Rescore without re-executing
 
-After fixing a scorer's logic/threshold, rescore a **completed** run's existing outputs:
+After fixing a scorer's logic/threshold, rescore a **completed** run's existing outputs. These
+are control-plane calls: use a personal API key (Studio → Settings → Profile → API keys) as
+`X-API-KEY`; service keys are rejected there.
 
 ```bash
-curl -X POST "https://api.agnt5.com/api/v1/projects/<project-id>/experiments/<experiment-id>/runs/<run-id>/rescore" \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+export AGNT5_PERSONAL_API_KEY=<personal-api-key>
+curl -X POST "https://api.agnt5.com/api/v1/projects/<project-id>/eval/runs/<run-id>/rescore" \
+  -H "X-API-KEY: $AGNT5_PERSONAL_API_KEY" -H "Content-Type: application/json" \
   -d '{"reason": "updated_rubric", "replace_latest": true}'
 agnt5 reports ci <run-id>     # check the updated verdict
 ```
@@ -171,12 +197,13 @@ Optional: `scorer_version_ids`, `run_item_ids` to narrow scope, `idempotency_key
 ## Annotate run items (human label vs. scorer verdict)
 
 ```bash
-curl -X POST ".../experiments/<experiment-id>/runs/<run-id>/items/<item-id>/annotations" \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+curl -X POST "https://api.agnt5.com/api/v1/projects/<project-id>/eval/runs/<run-id>/items/<run-item-id>/annotations" \
+  -H "X-API-KEY: $AGNT5_PERSONAL_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "human_label", "label": "pass", "metadata": {"reviewer": "alice"}}'
 ```
 
-Stored separately from scores, used for meta-evaluation (scorer accuracy vs. human judgment).
+Optional fields: `score`, `explanation`. Annotations are stored separately from scores and used
+for meta-evaluation (scorer accuracy vs. human judgment).
 
 ## Inline evals from code: `client.eval()` / `client.batch_eval()`
 
@@ -203,7 +230,7 @@ result = client.batch_eval(
         BatchEvalItem(input={"message": "Where is my order #1234?"}, expected="...", item_id="order-status"),
         BatchEvalItem(input={"message": "Cancel order #5678"}, expected="...", item_id="order-cancel"),
     ],
-    scorers=["exact_match"],          # strings, preset instances, or LLMJudge(...) — mix freely
+    scorers=["exact_match"],          # names, {"name": ..., "config": {...}} dicts, presets, LLMJudge(...)
     max_concurrency=10,               # start at 3-5 during development
     timeout=60.0,
 )

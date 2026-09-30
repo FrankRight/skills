@@ -24,9 +24,12 @@ per-request billing, or need `waitForSignal`. Stay on a worker when you need fan
 
 Invokes are HMAC-SHA256 signed: `X-AGNT5-Signature: sha256=<hex>` over
 `"{X-AGNT5-Timestamp}.{X-AGNT5-Attempt-ID}." + body`, with
-`X-AGNT5-Signature-Version: workerless-hmac-sha256.v1` and a 5-minute skew window. The SDK
-verifies for you, **but only if your resolver returns a secret** - with no secret configured
-all three SDKs accept unsigned invokes. Generate one and use the same value on both sides:
+`X-AGNT5-Signature-Version: workerless-hmac-sha256.v1` and a 5-minute skew window.
+`X-AGNT5-Timestamp` is Unix time in **milliseconds** in all three SDKs; a test that signs with
+seconds gets 401 `WORKERLESS_SIGNATURE_EXPIRED`. AGNT5 sends `{run_id}:{attempt}` as the
+attempt ID. The SDK verifies for you, **but only if your resolver returns a secret** - with no
+secret configured all three SDKs accept unsigned invokes. Generate one and use the same value
+on both sides:
 
 ```bash
 ( umask 077 && openssl rand -base64 32 > .agnt5-serverless-secret )   # keep out of git
@@ -92,8 +95,20 @@ _ = serverless.RegisterWorkflow(handler, "hello", func(ctx *serverless.Context, 
     name, err := serverless.Step(ctx, "normalize-name", func(context.Context) (string, error) { return in.Name, nil })
     return map[string]string{"message": "hello " + name}, err
 })
-log.Fatal(http.ListenAndServe(":8787", handler))   // handler is an http.Handler
+log.Fatal(http.ListenAndServe("127.0.0.1:8787", handler))   // handler is an http.Handler; containers listen on ":"+port
 ```
+
+- **Python `serve()` snapshots the registries when it runs.** Define or import every component
+  before calling it: a workflow defined after `serve()` is missing from the manifest, and its
+  invokes get 404 `WORKERLESS_COMPONENT_NOT_FOUND`.
+- **Go scaffold has no `go.mod`.** Run `go mod init <module>`,
+  `go get github.com/agnt5dev/sdk-go@v0.10.3` and `go mod tidy`. sdk-go declares `go 1.26.5`,
+  so `go get` raises an older `go` line to that; build with Go 1.26.5 or newer.
+- **Go handlers that emit nothing answer `"events": null`** (sdk-go v0.10.3), and AGNT5
+  rejects that response with `WORKERLESS_INVALID_RESPONSE`. Wrap the handler so `null` becomes
+  `[]` (`references/go.md`).
+- **Bind to `127.0.0.1` for local tests.** The Go and Node scaffolds listen on all interfaces;
+  `references/go.md` and `references/typescript.md` show a `HOST` switch.
 
 Component lists (`workflows=`, `functions=`, `tools=`, `agents=`) are optional in Python and
 TypeScript: omit them to expose everything registered in the process, pass an explicit list to
@@ -113,7 +128,7 @@ finishing. Compare before porting:
 | State | Py `ctx.state`, `ctx.session.state`, `ctx.user.state`; Go `ctx.State()`, `ctx.Memory()` | Py/TS `await ctx.get/set/delete` - a plain map that lives for **one invoke** and is not checkpointed; Go has none. Anything needed after a suspension must be a step result |
 | Sleep | `ctx.sleep(seconds, name=)` / `ctx.sleep(ms, name)` / `ctx.Sleep(d, opts...)` | Same names; returns a timer suspension and resumes on reinvoke (Py seconds, TS ms, Go `time.Duration` + name) |
 | Human input | Py `ctx.wait_for_user`; TS `ctx.waitForUser`; Go `ctx.AskUser`/`RequestApproval` | Py `ctx.wait_for_user(question, input_type=, options=, allow_custom=, skippable=)`; TS `ctx.waitForUser(q, {inputType, options, allowCustom, skippable})`; Go `ctx.WaitForUser(serverless.UserInput{...})` |
-| External signal | Py: no method; TS `ctx.waitForSignal` **throws** `ConfigurationError`; Go: no method | Py `await ctx.wait_for_signal(name, name=step)`; TS `await ctx.waitForSignal<T>(name, step?)`; Go `serverless.WaitForSignal[T](ctx, name, step)` |
+| External signal | Py: no method; TS `ctx.waitForSignal` **throws** `ConfigurationError`; Go: no method | Py `await ctx.wait_for_signal(name, name=step)` (0.13.6 does not see gateway deliveries, see below); TS `await ctx.waitForSignal<T>(name, step?)`; Go `serverless.WaitForSignal[T](ctx, name, step)` |
 | Budget | n/a | `await ctx.yield_if_needed()` / `ctx.yieldIfNeeded()` / `ctx.YieldIfNeeded()` |
 | Model call helper | Go `ctx.Generate(model, req)` | Go: none - call `model.Generate(ctx, req)` (`*serverless.Context` embeds `context.Context`) |
 | Events | `ctx.emit(...)` streamed live | `ctx.emit(...)` / `ctx.Emit(Event{...})` returned in the invoke response, appended to the journal |
@@ -132,10 +147,14 @@ of work; when the margin is reached the adapter returns `status: "suspended"` wi
 checkpoint and AGNT5 reinvokes the same pinned deployment. Timers, signals, and user input
 work the same way - the HTTP request never stays open.
 
-- **Signal**: the workflow suspends with `reason: "signal"`; deliver it with
-  `POST {gateway}/v1/runs/{run_id}/signals/{signal_name}` and body `{"payload": <json>}`
-  (auth headers as in `agnt5-client`). The payload is the return value (Go decodes JSON into
-  `T`, falling back to the raw string).
+- **Signal**: the workflow suspends with `reason: "signal"` and the run reports `paused`;
+  deliver it with `POST {gateway}/v1/runs/{run_id}/signals/{signal_name}` and body
+  `{"payload": <json>}` using a `workflow`-scoped key (`agnt5-client`). The gateway passes the
+  payload to the next invoke as `signal_name` / `waiting_step` / `signal_payload` metadata,
+  which TypeScript and Go read (Go decodes JSON into `T`, falling back to the raw string).
+  **Python 0.13.6 looks for a `signals` metadata map instead, which the gateway does not send,
+  so its `wait_for_signal` keeps suspending**; read the gateway keys yourself
+  (`references/python.md`).
 - **User input**: suspends with `reason: "user_input_required"`; answer from Studio or
   `POST /v1/workflows/resume/{run_id}` with `{"user_response": "..."}` (`agnt5-client`).
   Replay semantics are the same as on workers - checkpoint side effects before the pause
@@ -143,6 +162,21 @@ work the same way - the HTTP request never stays open.
 - **Agents**: session history is stored in the invoke checkpoint (`agent_sessions`) and
   restored before the next turn. Go's `serverless.Agent{Name, Run}` is a plain runner, not
   `agnt5.Agent`.
+
+**Replay carries step results, not answers or signals.** A resumed invoke replays the handler
+with the checkpoint (step results) plus the metadata of the latest resume:
+
+- An answered question needs its answer on every later invoke. On the platform the latest
+  `pause_index` / `user_response` stay in the run's metadata, so a question followed by a
+  signal works; an offline test must send them again with the signal.
+- Only the latest signal is in the metadata. Put each signal wait inside a step so its payload
+  is checkpointed and survives a later signal: Python
+  `await ctx.step("payment", lambda: wait_for_signal(ctx, "payment.settled"))`, TypeScript
+  `await ctx.step('payment', () => ctx.waitForSignal('payment.settled'))`.
+- More than one question: TypeScript returns the earlier answers as `step_events` in each
+  suspension, and AGNT5 hands them back. Python 0.13.6 reads one answer per invoke and Go
+  v0.10.3 returns no `step_events`, so in those SDKs the second answer makes the replay ask the
+  first question again. Keep Python and Go serverless workflows to one question.
 
 Large inputs/outputs arrive and leave as signed object-store references; the SDKs resolve
 them. Clients read big outputs with `client.resolveOutput()`/`waitForOutput()` (TypeScript).
