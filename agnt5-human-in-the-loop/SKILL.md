@@ -1,6 +1,6 @@
 ---
 name: agnt5-human-in-the-loop
-description: Add durable human-in-the-loop pauses to an AGNT5 workflow with ctx.wait_for_user() (text, approval, select, multiselect) or agent-level AskUserTool/RequestApprovalTool, including the answer formats each input type returns and how to answer a paused run from your own backend (RunStatus.AWAITING_USER_INPUT, POST /v1/workflows/resume/{run_id}). Use when a workflow or agent needs to pause for human approval, ask the user a question, or let them pick an option before continuing ("ask_user", "request_approval", "wait for sign-off"), including replay-safety guidance for code that runs before a pause.
+description: Add durable human-in-the-loop pauses to an AGNT5 workflow with ctx.wait_for_user() (text, approval, select, multiselect) or agent-level AskUserTool/RequestApprovalTool, including the answer formats each input type returns and how to answer a paused run from your own backend (status `paused`, telling a question from a durable sleep, POST /v1/workflows/resume/{run_id} with a `workflow`-scoped key, cancelling). Use when a workflow or agent needs to pause for human approval, ask the user a question, or let them pick an option before continuing ("ask_user", "request_approval", "wait for sign-off"), including replay-safety guidance for code that runs before a pause.
 ---
 
 # AGNT5 Human-in-the-loop
@@ -134,14 +134,56 @@ async def agent_with_hitl(ctx: WorkflowContext, task: str) -> dict:
 
 ## Answering a pause from your own backend
 
-A paused run reports `RunStatus.AWAITING_USER_INPUT` (`client.get_status(run_id).status`).
-There is no Python `Client` method to answer it in 0.13.6; call the gateway directly:
+A paused run reports status `paused` (`RunStatus.PAUSED`), both while it waits for an answer
+and during a durable `ctx.sleep()`. `awaiting_user_input` never appears. `agnt5 run` and
+`client.run(...)` return at the first pause with `status: paused` and the run ID. In 0.13.6
+that `RunResponse` has `is_error == True` and `raise_for_status()` raises
+`RunError("Run failed with status: paused")`, so test `res.status == RunStatus.PAUSED` first.
+Keep the ID: paused and in-flight runs are missing from `agnt5 inspect runs ls` (and MCP
+`list_runs`), and `agnt5 inspect runs describe` returns 404 until the run finishes. The
+gateway's run list does include them, which helps when `agnt5 run --timeout` gives up without
+printing an ID. Follow the run on the gateway:
+
+| Call | Use |
+|---|---|
+| `GET /v1/runs?component_name=<workflow>` | Find queued, assigned and paused runs (filters: `status`, `deployment_id`, `limit`) |
+| `GET /v1/runs/{run_id}` or `client.get_status(run_id)` | Status (`paused`, `running`, `completed`, ...) |
+| `GET /v1/runs/{run_id}/events` or `client.get_events(run_id)` | What the run is waiting on |
+| `POST /v1/workflows/resume/{run_id}` with `{"user_response": ...}` | Answer the question |
+| `POST /v1/runs/{run_id}/cancel` with optional `{"reason": "..."}` | Stop the run |
+
+**Confirm the pause is a question before you answer.** Read the run's newest `workflow.paused`
+event. For a question its `metadata` has `pause_reason: "user_input_required"`, `pause_index`
+and `question` (Python and Go workers also emit `approval.requested`); for a durable sleep its
+`data` has `reason: "timer"`. A resume sent while the run only sleeps is accepted, and its
+answer goes to the next question without that question being shown.
+
+```python
+from agnt5 import Client, RunStatus
+
+
+def pending_question(client: Client, run_id: str) -> dict | None:
+    """Metadata of the question a paused run waits on; None while it sleeps or runs."""
+    if client.get_status(run_id).status != RunStatus.PAUSED:
+        return None
+    paused = [e for e in client.get_events(run_id) if e.event_type == "workflow.paused"]
+    latest = (paused[-1].metadata or {}) if paused else {}
+    return latest if latest.get("pause_reason") == "user_input_required" else None
+```
+
+There is no Python `Client` method to answer or cancel in 0.13.6; call the gateway with a
+service key that has the `workflow` scope. A `run`-only key gets 403 `INSUFFICIENT_SCOPES` on
+resume and on cancel.
 
 ```bash
+agnt5 service-keys create --name backend --project <project-id> --scopes run,workflow
 curl -X POST "$AGNT5_GATEWAY_URL/v1/workflows/resume/<run_id>" \
   -H "X-API-KEY: $AGNT5_API_KEY" -H "Content-Type: application/json" \
   -d '{"user_response": "approve"}'
 ```
+
+To pin the key to one environment add `--environment <environment-id>`: it takes the ID
+(`env_id` in `agnt5 deployment list -o json`), not the name.
 
 `user_response` reaches `wait_for_user()` as a **string**: send a plain string for text /
 approval / select, a JSON array string (`"[\"market\",\"tech\"]"`) for multiselect, and

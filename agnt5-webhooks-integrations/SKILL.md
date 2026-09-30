@@ -1,6 +1,6 @@
 ---
 name: agnt5-webhooks-integrations
-description: Connect AGNT5 to the outside world - trigger workflows from Standard Webhooks, Sentry, Stripe, GitHub, or Slack events and internal event() triggers, the trigger envelope the handler receives (event["data"]["body"] plus deployment_id/target_kind/target_ref kwargs; filter/input-mapping/batch/delay options exist but are not dispatched yet), signature verification and idempotent delivery; run an agent as a Slack/Discord/Teams/Telegram chat bot with ChatBot; and call deployed workflows from your own app with Client.run/submit, pending receipts and idempotency keys. Use for "receive a Stripe/GitHub/Sentry webhook", "start a workflow when X happens", "build a Slack bot", "call my AGNT5 workflow from my backend", or a triggered workflow failing with an unexpected keyword argument.
+description: Connect AGNT5 to the outside world - trigger workflows from Standard Webhooks, Sentry, Stripe, GitHub, or Slack events (integrations are created in Studio) and internal event() triggers published with POST /v1/events, the trigger envelope the handler receives (event["data"]["body"] plus deployment_id/target_kind/target_ref kwargs; filter/input-mapping/batch/delay options exist but are not dispatched yet), signature verification and idempotent delivery; run an agent as a Slack/Discord/Teams/Telegram chat bot with ChatBot; and call deployed workflows from your own app with Client.run/submit, pending receipts and idempotency keys. Use for "receive a Stripe/GitHub/Sentry webhook", "start a workflow when X happens", "build a Slack bot", "call my AGNT5 workflow from my backend", or a triggered workflow failing with an unexpected keyword argument.
 ---
 
 # AGNT5 Webhooks and Integrations
@@ -67,17 +67,53 @@ inside the workflow instead.
 
 `body` is the raw request body as a **string** — parse it yourself so you operate on exactly
 the bytes that were signature-verified. `headers` keys are lowercased. For `event()` triggers
-`event["data"]` is whatever the publisher sent; `target_kind` is `deployment_id` or
+the gateway builds the same outer record from the published event: `event["id"]` is its
+`event_id`, `event["name"]` its `event_name`, `event["data"]` its `payload`, and
+`event["source"]` its `source` (`"api"` when omitted); `target_kind` is `deployment_id` or
 `environment_ref`.
 
+## Publish internal events (`POST /v1/events`)
+
+An `event("user.signed_up")` trigger fires when something posts that event to the gateway.
+Any valid service key can publish (no extra scope). Name the target environment or deployment:
+
+```bash
+curl -X POST "$AGNT5_GATEWAY_URL/v1/events" \
+  -H "X-API-KEY: $AGNT5_API_KEY" -H "Content-Type: application/json" \
+  -d '{"event_name": "user.signed_up", "event_id": "signup-42",
+       "payload": {"user_id": "42"}, "environment_ref": "production"}'
+```
+
+| Field | Notes |
+|---|---|
+| `event_name` (alias `name`) | Required; matched exactly against `event(...)` names |
+| `event_id` (alias `id`) | Required. Re-posting the same id to the same target returns `duplicate: true` with the same `run_ids` (run IDs derive from it) |
+| `payload` (alias `data`) | Any JSON; arrives as `event["data"]` |
+| `source` | Optional label, default `"api"` |
+| `environment_ref` or `deployment_id` | At most one. `environment_ref` takes an environment name such as `production`. With neither, the gateway uses the key's `--environment` / `--deployment` pin or an `X-DEPLOYMENT-ID` header; otherwise it answers 400 `deployment_id or environment_ref is required` |
+| `timestamp_ns`, `metadata` | Optional |
+
+Only triggers registered by the deployment that serves the target match. The gateway answers
+**202** with `{"event_run_id", "event_id", "event_name", "deployment_id", "target_kind",
+"target_ref", "status": "received", "duplicate", "matched_count", "skipped_unsupported_count",
+"run_ids"}`: `run_ids` are the workflow runs it queued (follow them as in `agnt5-client`), and
+`matched_count: 0` means no trigger matched. `GET /v1/events` lists received events, newest
+first (query: `source`, `event_name`, `deployment_id`, `since_ms`, `until_ms`, `limit` up to
+200, `cursor` from `next_cursor`); `GET /v1/events/{event_run_id}` shows one with its payload,
+matched triggers and run IDs.
+
 ## Set up an integration (once per source)
+
+Webhook integrations are created in Studio only: the CLI has no integrations command, and the
+MCP server (`agnt5 mcp`) can list them (`list_project_integrations`) but not create them.
 
 1. **Studio → Integrations → New**, pick the source.
 2. Pick the **environment** whose deployment should receive triggers.
 3. Provide the **signing secret** — AGNT5 generates one for GitHub and Standard Webhooks
    (copy it into the publisher); paste the provider-issued one for Stripe, Slack, Sentry.
-4. Copy the **webhook URL** (`…/v1/webhooks/{source}/{integration_id}`) into the provider's
-   webhook settings.
+4. Copy the **webhook URL** Studio shows (`…/v1/events/{source}/{integration_id}`) into the
+   provider's webhook settings. The gateway answers 404 `integration not configured` for an
+   unknown integration ID.
 
 ## Signature verification (handled automatically, know the model)
 
@@ -177,8 +213,10 @@ sub = client.submit("onboarding_workflow", {"user_email": "ada@example.com"},
 `await client.get_status(run_id)` / `await client.get_result(run_id)`. Always pass
 `idempotency_key=` from a stable business id so retries from your app don't start duplicate
 runs. `run` and `stream_events` (not `submit`) take `session_id=` / `user_id=` to give the run
-session and user scope (`agnt5-workflows`). From a shell, `agnt5 run ... --env production`
-does the same (see `agnt5-project-init`). Full client API, streaming and answering a paused
+session and user scope (`agnt5-workflows`). From a shell, target a deployment explicitly:
+`agnt5 run <name> --type workflow --deployment-id <deployment-id> --input '{...}'` (see
+`agnt5-project-init`; `agnt5 run --env preview` answers 409 "environment has no active
+deployment"). Full client API, streaming and answering a paused
 run: `agnt5-client`.
 
 ## Source

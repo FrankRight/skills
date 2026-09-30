@@ -50,12 +50,10 @@ environment: dev
 
 worker:
   command: "go run ."
-
-deploy:
-  resources:
-    memory: 512Mi
-    cpu: 500m
 ```
+
+No `deploy.resources` block: it is not applied (the shipped Go templates still have one;
+delete it there too).
 
 `.env.example`: one line per key, e.g. `OPENAI_API_KEY="your-openai-api-key-here"`. `agnt5 dev`
 loads `.env`; the SDK itself never reads provider keys — the code passes them explicitly.

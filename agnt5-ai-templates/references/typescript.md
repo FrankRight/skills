@@ -31,13 +31,14 @@ of `agnt5-workflows`, `agnt5-agents-tools` and `agnt5-human-in-the-loop`.
   "private": true,
   "engines": { "node": ">=22" },
   "scripts": { "start": "npx tsx app.ts", "typecheck": "tsc --noEmit" },
-  "dependencies": { "@agnt5/sdk": "^0.10.5", "tsx": "^4.21.0" },
-  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.3" }
+  "dependencies": { "@agnt5/sdk": "^0.10.5" },
+  "devDependencies": { "@types/node": "^22.0.0", "tsx": "^4.21.0", "typescript": "^5.9.3" }
 }
 ```
 
-`tsx` lives in `dependencies`, not `devDependencies`: the managed worker installs with
-`npm install --production` and would otherwise download an unpinned `tsx` on every cold start.
+Run `npm install` and ship the resulting `package-lock.json`: the managed worker installs
+with `npm ci --include=dev` (devDependencies such as `tsx` included) and fails if the lockfile
+is out of sync with `package.json`.
 
 ## `tsconfig.json`
 
@@ -75,12 +76,9 @@ environment: dev
 
 worker:
   command: "npx tsx app.ts"
-
-deploy:
-  resources:
-    memory: 512Mi
-    cpu: 500m
 ```
+
+No `deploy.resources` block: it is not applied.
 
 ## `src/agents.ts`
 
@@ -128,7 +126,9 @@ export const myTool = tool(
 ```
 
 `inputSchema` is mandatory in practice: without it the model sees a tool with no parameters.
-The first handler parameter is always `ctx` (hidden from the model).
+The first handler parameter is always `ctx` (hidden from the model). `ctx.logger` attribute
+values must be strings (`{ count: String(n) }`); a number, boolean, object or array fails the
+run with ``Failed to convert JavaScript value … into rust type `String` ``.
 
 ## `src/functions.ts`
 

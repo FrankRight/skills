@@ -1,6 +1,6 @@
 ---
 name: agnt5-observe
-description: Look up AGNT5 runtime data with the CLI, MCP, or Studio - list and describe runs, print execution traces (steps, tool calls, LLM spans), stream run or deployment logs, read throughput/latency/cost metrics, instrument your own code (ctx.logger attributes, agnt5.tracing spans, get_logger / set_log_level, AGNT5_DEBUG), and control automatic OpenAI / OpenAI Agents SDK / Google ADK call capture (AGNT5_CAPTURE*). Use for "show me recent failed runs", "tail the logs", "print the trace for run X", "add a span or log attribute", "why aren't my OpenAI calls in the trace". For a root-cause analysis of one bad run use agnt5-run-investigation; for recurring issues across runs use agnt5-pattern-analysis.
+description: Look up AGNT5 runtime data with the CLI, MCP (agnt5 mcp), or Studio - list and describe runs, find, follow or cancel a run that hasn't finished, print execution traces (steps, tool calls, LLM spans), read run logs and deployment logs, read throughput/latency/cost metrics, instrument your own code (ctx.logger attributes, agnt5.tracing spans, get_logger / set_log_level, AGNT5_DEBUG), and control automatic OpenAI / OpenAI Agents SDK / Google ADK call capture (AGNT5_CAPTURE*). Use for "show me recent failed runs", "tail the logs", "print the trace for run X", "add a span or log attribute", "why aren't my OpenAI calls in the trace". For a root-cause analysis of one bad run use agnt5-run-investigation; for recurring issues across runs use agnt5-pattern-analysis.
 ---
 
 # AGNT5 Observe
@@ -18,9 +18,29 @@ For a full root-cause analysis with evidence, use `agnt5-run-investigation` inst
 ```bash
 agnt5 inspect runs ls --status failed --since 1h
 agnt5 inspect runs describe <runId>
-agnt5 inspect logs -r <runId> --severity ERROR
 agnt5 inspect trace -r <runId>
 ```
+
+For the run's logs use the MCP tool `get_run_logs` (below) or the run page in Studio:
+`agnt5 inspect logs -r <runId>` currently fails with `403 … Workspace context is required
+for this action`.
+
+Run the commands inside the linked project directory; they read that project.
+
+## AGNT5 MCP tools
+
+The CLI ships an MCP server over stdio that uses your `agnt5 auth login` session. Register it
+with your MCP client, e.g. Claude Code:
+
+```bash
+claude mcp add agnt5 -- agnt5 mcp
+```
+
+`agnt5 mcp --services runs,traces,analytics` limits the tools to those categories (others:
+projects, deployments, workers, evals, experiments, scorers, prompts, identity). The tools
+take IDs rather than a project directory: `list_runs`, `get_run_summary`, `get_run_logs`,
+`get_trace_excerpt`, `get_trace`, `get_analytics_dashboard`, `get_error_breakdown`,
+`get_llm_usage`, and more.
 
 ## Runs
 
@@ -34,7 +54,7 @@ agnt5 inspect runs describe <runId>
 
 | Flag | Description |
 |---|---|
-| `--status` | `completed`, `failed`, `running`, `pending` |
+| `--status` | `completed`, `failed`, `cancelled` (the CLI also offers `running` and `pending`, but they match nothing: unfinished runs are not listed) |
 | `--component <name>` / `--component-type <type>` | Filter by component |
 | `--since <window>` | e.g. `1h`, `24h`, `7d` |
 | `--limit <n>` | Default 20 |
@@ -44,6 +64,28 @@ agnt5 inspect runs describe <runId>
 Each run records: run ID, component name+type, status, duration, queue time, step count,
 retries, LLM call count, LLM cost, error (on failure). `describe` also prints next-step
 commands (`agnt5 inspect logs -r ...`, `agnt5 inspect trace -r ...`).
+
+### Runs that haven't finished
+
+`agnt5 inspect runs ls`, `describe`, and the MCP `list_runs` / `get_run_summary` read a
+summary written when a run ends. A queued, running, sleeping or paused run is not listed, and
+`describe` answers 404 ("No summary") until it finishes. `agnt5 run` returns at the run's
+first pause with `status: paused` and the run ID; with `--timeout` on a workflow it gives up
+without printing the ID.
+
+Follow such a run through the gateway with a service key (`agnt5-deploy`):
+
+```bash
+curl -s -H "X-API-KEY: $AGNT5_API_KEY" "https://gw.agnt5.com/v1/runs?component_name=my_workflow&limit=10"  # unfinished runs too (queued, assigned, ...)
+curl -s -H "X-API-KEY: $AGNT5_API_KEY" https://gw.agnt5.com/v1/runs/<run-id>          # status
+curl -s -H "X-API-KEY: $AGNT5_API_KEY" https://gw.agnt5.com/v1/runs/<run-id>/events   # journal so far
+curl -s -X POST -H "X-API-KEY: $AGNT5_API_KEY" -H "Content-Type: application/json" \
+  -d '{"reason": "stuck"}' https://gw.agnt5.com/v1/runs/<run-id>/cancel
+```
+
+Reading needs the default `run` scope; cancelling needs a key with the `workflow` scope
+(`--scopes run,workflow`), otherwise it returns 403 `INSUFFICIENT_SCOPES`. A cancelled run
+then shows up in `agnt5 inspect runs ls --status cancelled`.
 
 ## Traces
 
@@ -64,25 +106,38 @@ tool.search_flights                   [197ms]
 
 In Studio: open the run → **Trace** tab — interactive tree, updates live while running.
 
+`agnt5 inspect trace -r` looks the run up among the project's 200 most recent runs; for an
+older run, take the trace ID from `agnt5 inspect runs describe` and use the MCP
+`get_trace_excerpt` / `get_trace` tools.
+
 ## Logs
 
-```bash
-agnt5 inspect logs -r <runId>
-agnt5 inspect logs -r <runId> --severity ERROR
-agnt5 inspect logs -r <runId> --follow      # live stream while a run is in progress
-agnt5 inspect logs -r <runId> --tail 20
-```
+A run's logs hold what your code logged through the SDK logger (`ctx.logger`, `get_logger`)
+plus the run's lifecycle lines. Read them with the MCP tool
+`get_run_logs(run_id, project_id)` or on the run page in Studio.
 
-Deployment (worker process) logs, not scoped to a run:
+`agnt5 inspect logs -r <runId>` (with `--severity`, `--follow`, `--tail`) is the CLI command
+for this, but it currently fails with `403 … Workspace context is required for this action`.
+
+Plain stdout/stderr (`print`, `console.log`, Go `log.Printf`) never reaches a run's logs.
+Locally it prints in the `agnt5 dev` terminal (`agnt5 dev logs` when detached). A deployed
+worker's stdout is not shown anywhere, so log what you need through the SDK logger.
+
+Deployment logs are the platform's record of a deployment (bundle, scheduling, readiness,
+traffic switch), not your worker's output:
 
 ```bash
 agnt5 logs <deployment-id> --since 2h
 agnt5 logs <deployment-id> --follow --timestamps
+agnt5 deploy debug <deployment-id> --logs     # a crashed worker's exit code and last output line
 ```
 
-Live output deltas (`output.delta`, `lm.*.delta`, thinking deltas, progress) are transient:
-they stream while the run executes but are not stored or replayed on reconnect. Lifecycle,
-step, tool and model-call boundary events are durable.
+Live output deltas (`output.delta`, `lm.message.delta`, `lm.thinking.delta`, `lm.tool_call.*`,
+`progress.*`) are transient: they stream while the run executes but are not stored or
+replayed on reconnect. An agent run on the platform streams them as `lm.message.*` and
+`lm.thinking.*` (what `Client.stream_events` receives); a Python `Agent.stream()` called
+in-process yields `lm.content_block.*` instead. Lifecycle, step, tool and model-call boundary
+events are durable.
 
 ## Instrument your own code
 
@@ -109,9 +164,10 @@ or `AGNT5_DEBUG=1` (set before import) turns on SDK debug output.
 
 ## Metrics (Studio or AGNT5 MCP)
 
-From Claude with the AGNT5 MCP connected: `get_analytics_dashboard`, `get_component_breakdown`,
-`get_error_breakdown`, `get_llm_usage`, `get_runs_timeseries`, `get_latency_timeseries`.
-In Studio:
+There is no CLI command for metrics. With `agnt5 mcp` registered (above), use
+`get_analytics_dashboard`, `get_component_breakdown`, `get_error_breakdown`, `get_llm_usage`,
+`get_runs_timeseries`, `get_latency_timeseries` (each takes `project_id`, optional
+`since`/`until` in RFC3339). In Studio:
 
 - **Analytics** — summary for a time window: total executions, success rate, P95 latency,
   total LLM cost; charts for executions/latency over time, LLM usage by model, top errors.

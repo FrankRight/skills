@@ -7,12 +7,10 @@ different for a TypeScript worker and the code-side logging, span and capture AP
 ## Traces: no spans for TypeScript runs yet
 
 TypeScript workers do not export trace spans, so for a TS run
-`agnt5 inspect trace -r <runId>` and Studio's Trace tab have no span tree to show. Use instead:
-
-```bash
-agnt5 inspect runs describe <runId>            # status, duration, step count, error
-agnt5 inspect logs -r <runId> --severity ERROR  # your ctx.logger lines
-```
+`agnt5 inspect trace -r <runId>` and Studio's Trace tab have no span tree to show. Use instead
+`agnt5 inspect runs describe <runId>` (status, duration, step count, error) and the run's
+logs — your `ctx.logger` lines — through the MCP tool `get_run_logs` or the run page in
+Studio (`agnt5 inspect logs -r` currently returns 403).
 
 The run's *journal events* (`workflow.step.*`, `function.*`, `agent.*`, `lm.*`,
 `tool_call.*`) are still recorded and drive the Studio run timeline, scorers and
@@ -35,16 +33,24 @@ try {
 ```typescript
 import { getLogger, setLogLevel } from '@agnt5/sdk';
 
-ctx.logger.info('Sending email', { to, attempt: ctx.attempt });   // run logs + stdout
+ctx.logger.info('Sending email', { to, attempt: String(ctx.attempt) });   // run logs + stdout
 
 const log = getLogger('billing');       // module-level; records are attributed to the current run
-log.debug('details', { key: 'value' });
+log.debug('details', { key: 'value', retries: 3 });                     // non-strings are JSON-encoded
 setLogLevel('DEBUG');                   // 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'; AGNT5_DEBUG=1 does the same at startup
 ```
 
 Extra fields go in the second argument as an object (`ctx.logger.info('msg', { key })`), not as
-keyword arguments. Plain `console.log` reaches only the worker's stdout (deployment logs),
-never `agnt5 inspect logs -r`.
+keyword arguments. **`ctx.logger` attribute values must be strings.** The SDK passes them
+straight to the native binding, so a number, boolean, object or array fails the whole run
+with ``Failed to convert JavaScript value `Number 1 ` into rust type `String` ``
+(`StringExpected`). TypeScript does not catch this: the parameter is typed
+`Record<string, any>`. Wrap values in `String(...)` or `JSON.stringify(...)`. Loggers from
+`getLogger()` convert non-string values with `JSON.stringify` themselves.
+
+Plain `console.log` / `console.error` never reach the run's logs. Locally they print in the
+`agnt5 dev` terminal; from a deployed worker they are not shown anywhere (`agnt5 logs
+<deployment-id>` is the platform's lifecycle log).
 
 ## Spans from code
 
@@ -62,7 +68,7 @@ getCurrentSpanInfo();   // { traceId, spanId } | undefined
 ```
 
 These stamp `traceId`/`spanId` onto log records emitted inside them (that correlation is what
-`agnt5 inspect logs` shows). Whether the span itself is exported depends on the native
+the run's logs show). Whether the span itself is exported depends on the native
 binding; until TypeScript runs record spans, treat them as log correlation, not as trace
 structure.
 
@@ -108,7 +114,8 @@ Identical to the SKILL.md (Studio Analytics/Metrics, MCP tools, `--output json`)
 |---|---|---|
 | Empty trace for a TS run | no span export | logs + journal events |
 | Error code always `EXECUTION_ERROR` | worker collapses codes | log `err.name` yourself |
-| `console.log` lines missing from `agnt5 inspect logs -r` | console is stdout only | use `ctx.logger` / `getLogger` |
+| Run fails with ``Failed to convert JavaScript value … into rust type `String` `` | non-string `ctx.logger` attribute | `String(value)` |
+| `console.log` lines missing from the run's logs | console is stdout only | use `ctx.logger` / `getLogger` |
 | `AGNT5_CAPTURE_CONTENT_MODE=redacted` has no effect | Python-only variable | `AGNT5_LLM_CAPTURE_CONTENT=off` |
 | OpenAI calls from a script are not captured | no ambient component context | run them inside a `fn()` / workflow |
 

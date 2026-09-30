@@ -148,17 +148,58 @@ agent from a workflow handler, not from `RegisterAgent` — pauses need a workfl
 
 ## Resuming from code
 
+The run reports `agnt5.RunStatusPaused` both while it waits for an answer and during a durable
+`ctx.Sleep`; `RunStatusAwaitingUserInput` never appears. Only the newest `workflow.paused` event
+tells them apart: a question has `pause_reason: "user_input_required"` in its `Metadata`, a
+sleep has `reason: "timer"` in its `Data`. A resume sent during a sleep is accepted and its
+answer goes to the next question without that question being shown, so check first.
+`ResumeWorkflow` and `CancelRun` need a key with the `workflow` scope (`agnt5 service-keys
+create ... --scopes run,workflow`); with a `run`-only key they return a `*agnt5.ClientError`
+with `StatusCode` 403 (`INSUFFICIENT_SCOPES`). Deployed workers pause on `ctx.Sleep`; under
+local `agnt5 dev` a Go `ctx.Sleep` does not suspend (the run shows `assigned`), so test the
+paused-sleep case on a deployment.
+
 ```go
-client, err := agnt5.NewClient("", agnt5.WithAPIKey(os.Getenv("AGNT5_API_KEY"))) // "" => AGNT5_GATEWAY_URL
-res, err := client.Run(ctx, "review_workflow", in,
-    agnt5.WithRunComponentType(agnt5.ComponentTypeWorkflow), agnt5.WithWaitTimeout(0)) // accepted receipt
-// ... later, once the run is paused (status constants: agnt5.RunStatusPaused / RunStatusAwaitingUserInput;
-// which one the gateway reports was not verified) ...
-_, err = client.ResumeWorkflow(ctx, res.RunID, "approve")                   // POST /v1/workflows/resume/{run_id} {"user_response": "approve"}
-_, err = client.ResumeWorkflow(ctx, res.RunID, []string{"market", "tech"})  // multiselect: arrives as the JSON string above
+// pendingQuestion returns the metadata of the question a paused run waits on,
+// or nil while the run sleeps or is still running.
+func pendingQuestion(ctx context.Context, client *agnt5.Client, runID string) (map[string]any, error) {
+    status, err := client.GetStatus(ctx, runID)
+    if err != nil || status.Status != agnt5.RunStatusPaused {
+        return nil, err
+    }
+    events, err := client.GetEvents(ctx, runID)
+    if err != nil {
+        return nil, err
+    }
+    var latest map[string]any
+    for _, ev := range events.Items {
+        if ev.EventType == "workflow.paused" {
+            latest = ev.Metadata
+        }
+    }
+    if latest["pause_reason"] != "user_input_required" {
+        return nil, nil
+    }
+    return latest, nil
+}
 ```
 
-Studio and `agnt5 run` handle the pause UI for you; `ResumeWorkflow` is for your own backend.
+```go
+client, err := agnt5.NewClient("", agnt5.WithAPIKey(os.Getenv("AGNT5_API_KEY"))) // "" => AGNT5_GATEWAY_URL
+res, err := client.Run(ctx, "review_workflow", in, agnt5.WithRunComponentType(agnt5.ComponentTypeWorkflow))
+// Run returns at the first pause: res.Status == agnt5.RunStatusPaused, res.IsPending() == true.
+if q, err := pendingQuestion(ctx, client, res.RunID); err == nil && q != nil {
+    _, err = client.ResumeWorkflow(ctx, res.RunID, "approve") // POST /v1/workflows/resume/{run_id} {"user_response": "approve"}
+}
+_, err = client.ResumeWorkflow(ctx, res.RunID, []string{"market", "tech"}) // multiselect: arrives as the JSON string above
+_, err = client.CancelRun(ctx, res.RunID, "operator stop")                 // POST /v1/runs/{run_id}/cancel {"reason": ...}
+```
+
+`WaitForResult` counts `paused` as finished and returns at once with `Status ==
+agnt5.RunStatusPaused`. Paused runs are missing from `agnt5 inspect runs ls` and
+`agnt5 inspect runs describe` returns 404 until the run finishes, so keep `res.RunID`
+(`GET /v1/runs?component_name=<workflow>` on the gateway lists unfinished runs). Studio
+and `agnt5 run` handle the pause UI for you; `ResumeWorkflow` is for your own backend.
 
 ## Not available in Go
 

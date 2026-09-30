@@ -14,13 +14,26 @@ what a Go worker emits and how to control it.
 | `ctx.Generate` | one lm span / MODEL activation (`lm.completed` / `lm.failed` are the event names trace scorers match) |
 | `ctx.AskUser` / `ctx.Sleep` | `workflow.step.paused`, `approval.requested`, `workflow.paused` / timer activation |
 | `load_skill` | `skill.loaded` (`skill_name`, `instructions_length`, `resources_materialized`) |
-| `ctx.Logger().Info(...)` | run-scoped log event (`agnt5 inspect logs -r <runId>`) |
+| `ctx.Logger().Info(...)` | run-scoped log record (MCP `get_run_logs`, the run in Studio) plus a `log.info` journal event |
 | `ctx.Output(delta)` | `output.delta` (streaming) |
 | `ctx.Emit(agnt5.Event{Type: "order.validated", Data: map[string]any{...}})` | your own event in the journal |
 
-Read a run's journal from code: `client.GetEvents(ctx, runID)` → `[]agnt5.RunEvent{EventType,
-Data, StepKey, CorrelationID, ...}`; `agnt5.ExtractToolCallsFromEvents` works on
-`[]agnt5.TraceEvent` (the scorer-side shape, `agnt5-scorers`).
+Read a run's journal from code: `client.GetEvents(ctx, runID)` returns
+`(*agnt5.EventsResponse, error)`; the events are in `resp.Items` (`[]agnt5.RunEvent{EventType,
+Data, StepKey, CorrelationID, ...}`) and `resp.Count` is their number:
+
+```go
+resp, err := client.GetEvents(ctx, runID)
+if err != nil {
+    return err
+}
+for _, ev := range resp.Items {
+    fmt.Println(ev.EventType, string(ev.Data))
+}
+```
+
+`agnt5.ExtractToolCallsFromEvents` works on `[]agnt5.TraceEvent` (the scorer-side shape,
+`agnt5-scorers`).
 
 ## Logging
 
@@ -39,8 +52,21 @@ slog.Info("starting")                          // no context => local only
 ```
 
 `NewSlogHandler` keeps your handler's level filtering and groups; records without an invocation
-context (or a context derived from one) are not forwarded. Plain `log.Printf` goes to stdout
-only: visible in `agnt5 logs <deployment-id>`, never in `agnt5 inspect logs -r`.
+context (or a context derived from one) are not forwarded.
+
+Where each kind of output can be read:
+
+| Output | Local `agnt5 dev` | Deployed worker |
+|---|---|---|
+| `ctx.Logger()` | run's logs only (MCP `get_run_logs`, Studio); not printed in the terminal | run's logs |
+| `slog.InfoContext(ctx, ...)` via `NewSlogHandler` | terminal and run's logs | run's logs |
+| `log.Printf`, `fmt.Println`, `slog.Info` without context | terminal (`agnt5 dev logs` when detached) | not shown anywhere |
+
+`agnt5 inspect logs -r <runId>` is meant to show the run's logs but currently returns 403;
+`agnt5 logs <deployment-id>` is the platform's lifecycle log for the deployment, not your
+worker's output. A deployed worker that crashes shows its last output line in
+`agnt5 deploy debug <deployment-id> --logs`. In the run's logs each keyval becomes a string
+attribute named `field.<key>` (`"n", 3` → `field.n: "3"`).
 
 ## Export (OTLP) and metrics
 
@@ -93,8 +119,8 @@ keyword form (`ctx.logger.info("msg", to=to)` → `ctx.Logger().Info("msg", "to"
 
 ## Go pitfalls for this skill
 
-- Using `log.Printf` for run diagnostics: it never reaches `agnt5 inspect logs -r` — use
-  `ctx.Logger()` or `slog.InfoContext(ctx, ...)` through `NewSlogHandler`.
+- Using `log.Printf` for run diagnostics: it never reaches the run's logs and is invisible
+  once deployed — use `ctx.Logger()` or `slog.InfoContext(ctx, ...)` through `NewSlogHandler`.
 - Direct vendor SDK calls leave gaps in the trace and in LLM cost metrics.
 - Trace export silently stays off until an OTLP traces endpoint is set; only logs are exported by
   default.

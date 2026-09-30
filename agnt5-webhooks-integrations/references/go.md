@@ -90,8 +90,49 @@ func TriageIssue(ctx *agnt5.Context, in TriggerInput) (TriageOutput, error) {
 Untyped: `func(ctx *agnt5.Context, event map[string]any)` then
 `event["event"].(map[string]any)["data"].(map[string]any)["body"].(string)` — check each
 assertion.
-Internal `EventTrigger` runs use the same outer record with the event's own payload at
-`event.data` (only the webhook case was live-tested).
+Internal `EventTrigger` runs get the same outer record from the gateway, with the published
+`payload` at `event.data` (not a `WebhookEnvelope`), `event.id` = `event_id` and
+`event.source` = `source` (default `"api"`). Give such handlers their own input type with
+`Data` as your payload struct or `json.RawMessage`.
+
+## Publish an internal event
+
+Fields, targeting and the 202 receipt are in the SKILL.md (`POST /v1/events`). There is no
+client method; POST it with `net/http`:
+
+```go
+func publishSignup(ctx context.Context, userID string) (map[string]any, error) {
+    body, err := json.Marshal(map[string]any{
+        "event_name":      "user.signed_up",
+        "event_id":        "signup-" + userID, // re-posting the same id returns duplicate: true
+        "payload":         map[string]any{"user_id": userID},
+        "environment_ref": "production",
+    })
+    if err != nil {
+        return nil, err
+    }
+    req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+        os.Getenv("AGNT5_GATEWAY_URL")+"/v1/events", bytes.NewReader(body))
+    if err != nil {
+        return nil, err
+    }
+    req.Header.Set("X-API-KEY", os.Getenv("AGNT5_API_KEY"))
+    req.Header.Set("Content-Type", "application/json")
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+    var receipt map[string]any // event_run_id, duplicate, matched_count, run_ids, ...
+    if err := json.NewDecoder(resp.Body).Decode(&receipt); err != nil {
+        return nil, err
+    }
+    if resp.StatusCode != http.StatusAccepted {
+        return receipt, fmt.Errorf("publish failed: %d %v", resp.StatusCode, receipt["error"])
+    }
+    return receipt, nil
+}
+```
 
 ## Idempotent delivery
 

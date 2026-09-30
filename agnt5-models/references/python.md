@@ -101,6 +101,10 @@ Event classes and `event_type` strings: `LMStarted` (`lm.started`), `LMContentBl
 `cached_tokens`, `finish_reason`), `LMFailed` (`lm.failed`). `lm.stream()` takes the same
 keyword arguments as `generate()` except `response_format` and the managed-prompt fields.
 
+These are the in-process names. An agent that runs as a worker component has its content-block
+events renamed before they reach clients (`Client.stream_events`, SSE): `lm.message.start` /
+`.delta` / `.stop` for text and `lm.thinking.*` for thinking blocks (`agnt5-agents-tools`).
+
 ## Prompt caching
 
 ```python

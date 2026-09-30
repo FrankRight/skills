@@ -28,10 +28,10 @@ config and falls back to the env var:
 
 ```typescript
 import { LM, createTool, jsonSchemaFormat, parseToolArguments, systemMessage, userMessage } from '@agnt5/sdk';
-import type { GenerateRequest, GenerateResponse, ReasoningEffort } from '@agnt5/sdk';
+import type { LMGenerateRequest, LMGenerateResponse, ReasoningEffort } from '@agnt5/sdk';
 
 const lm = LM.openai();
-const request: GenerateRequest = {
+const request: LMGenerateRequest = {
   model: 'openai/gpt-4o-mini',
   systemPrompt: 'Route support tickets.',                 // or a leading systemMessage(...)
   messages: [userMessage(ticket)],                        // Message { role, content, toolCalls?, toolCallId?, name? }
@@ -51,8 +51,9 @@ const request: GenerateRequest = {
   userId: undefined,
   prompt: undefined,                                      // { id, version?, variables? } for a managed prompt
 };
-const response: GenerateResponse = await lm.generate(request);
+const response: LMGenerateResponse = await lm.generate(request);
 // response: { id, model, created?, text, usage?, finishReason?, toolCalls?, structuredOutput?, raw? }
+// structuredOutput stays undefined in 0.10.5; parse response.text
 for (const call of response.toolCalls ?? []) {
   const args = parseToolArguments<{ order_id: string }>(call);
   // reply: messages.push({ role: 'assistant', content: '', toolCalls: response.toolCalls },
@@ -65,6 +66,10 @@ for (const call of response.toolCalls ?? []) {
 `ToolDefinition` is `{ name, description?, parameters?: string (JSON), strict? }`;
 `createTool()` serializes the schema for you.
 
+Type `LM` requests and responses as `LMGenerateRequest` / `LMGenerateResponse`. The root
+`GenerateRequest` / `GenerateResponse` exports are the agent's model contract (see below); using
+them for `lm.generate()` fails `tsc` (no `toolChoice`, `maxOutputTokens` or `prompt`).
+
 ## Structured output
 
 ```typescript
@@ -74,10 +79,12 @@ const format = jsonSchemaFormat('verdict', {
   required: ['label', 'confidence'],
 }, true);                                                  // strict = true -> OpenAI strict mode
 const res = await lm.generate({ model: 'openai/gpt-4o-mini', messages: [userMessage(text)], config: { responseFormat: format } });
-const verdict = (res.structuredOutput ?? JSON.parse(res.text)) as { label: string; confidence: number };
+const verdict = JSON.parse(res.text) as { label: string; confidence: number };
 ```
 
-`ResponseFormatOption` is `{ formatType: 'text' | 'json' | 'json_schema', schemaName?, schema? (JSON string), strict? }`.
+The schema reaches the provider and `res.text` is the JSON document, but `res.structuredOutput`
+is `undefined` in 0.10.5, so parse the text. `ResponseFormatOption` is
+`{ formatType: 'text' | 'json' | 'json_schema', schemaName?, schema? (JSON string), strict? }`.
 
 ## Streaming
 
@@ -108,11 +115,13 @@ aliases of `cache`. `normalizePromptCache(cache)` returns the resolved `PromptCa
 `new Agent({ name, model: LM.openai(), modelName: 'openai/gpt-4o-mini', instructions, temperature?, builtInTools?, ... })`
 takes either an `LM` or any object implementing the legacy `LanguageModel` interface
 (`generate(request): Promise<GenerateResponse>`, optional `stream()`), which is how you inject
-a canned model in tests (`agnt5-testing`).
+a canned model in tests (`agnt5-testing`). Here `GenerateRequest` / `GenerateResponse` are the
+root exports: a reply is `{ text, usage?, finishReason?, toolCalls? }` with no `id` or `model`.
 
 ## Quirks
 
 - Bare model names throw; prefix must match the factory (see table).
+- `response.structuredOutput` is always `undefined`; `JSON.parse(response.text)`.
 - `ReasoningEffort` excludes `'low'`/`'none'`; cast when the provider supports them.
   `'minimal'` is rejected (400) by `gpt-6-luna`.
 - Set `temperature: 1` for gpt-6 models (`Agent` and `generate`).

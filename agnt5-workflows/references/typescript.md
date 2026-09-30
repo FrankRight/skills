@@ -51,10 +51,16 @@ export const sendEmail = fn('send_email')
     required: ['to', 'subject', 'body'],
   })
   .run(async (ctx: Context, input: { to: string; subject: string; body: string }) => {
-    ctx.logger.info('Sending email', { to: input.to, attempt: ctx.attempt });
+    ctx.logger.info('Sending email', { to: input.to, attempt: String(ctx.attempt) });
     return `Sent to ${input.to}`;
   });
 ```
+
+**`ctx.logger` attribute values must be strings.** The worker hands them to a native logger
+that throws `StringExpected` (Failed to convert JavaScript value ... into rust type String) for
+numbers, booleans and objects, and the throw fails the run. The `meta` type is
+`Record<string, any>`, so `tsc` does not catch it: wrap values in `String(...)` or
+`JSON.stringify(...)`.
 
 Builder methods (all before `.run`): `retry(RetryPolicy)`, `backoff(BackoffPolicy)`,
 `timeout(ms)`, `inputSchema(JSONSchema)`, `outputSchema(JSONSchema)`, `flowControl(...)`,
@@ -62,9 +68,9 @@ Builder methods (all before `.run`): `retry(RetryPolicy)`, `backoff(BackoffPolic
 `{ maxAttempts?, initialIntervalMs?, maxIntervalMs? }` (defaults 3 / 1000 / 60000),
 `BackoffPolicy` is `{ type: 'constant' | 'linear' | 'exponential', multiplier? }`.
 
-`Context` gives you `ctx.runId`, `ctx.attempt` (0 = first try), `ctx.logger.info(msg, meta)`,
-`ctx.signal` (AbortSignal), `ctx.sleep(ms)`. There is one `Context` type for functions and
-workflows; the `FunctionContext` / `WorkflowContext` split does not exist.
+`Context` gives you `ctx.runId`, `ctx.attempt` (0 = first try), `ctx.logger.info(msg, meta)`
+(string values only), `ctx.signal` (AbortSignal), `ctx.sleep(ms)`. There is one `Context` type
+for functions and workflows; the `FunctionContext` / `WorkflowContext` split does not exist.
 
 ## Steps: the unit of durable work
 
@@ -148,7 +154,9 @@ await ctx.step('send_follow_up', () => sendFollowUp(ctx, { userId }));
 The sleep is durable only when the managed runtime negotiates `durable_suspension_v1`; the
 local `ContextImpl` falls back to `setTimeout`. Give every sleep a name. Resume replays the
 workflow from the top, so everything before the sleep must be inside `ctx.step`.
-`sleep(ctx, ms, name)` from `@agnt5/sdk` is the same call.
+`sleep(ctx, ms, name)` from `@agnt5/sdk` is the same call. While it sleeps the run reports
+`status: 'paused'` (like a `waitForUser` question) and `client.run()` returns at the sleep;
+see `agnt5-human-in-the-loop` for telling the two apart.
 
 ## State
 
@@ -228,6 +236,7 @@ await worker.run();
 | `agnt5 run <function>` exits 1 while the run later succeeds | CLI prints the first failed attempt; platform keeps retrying | check `agnt5 inspect runs describe <runId>` |
 | Worker process exits mid-run | unhandled promise rejection | `process.on('unhandledRejection', ...)` in `app.ts` |
 | Every failure shows `EXECUTION_ERROR` | worker maps all errors to one code | log `err.name` / `err.constructor.name` yourself |
+| Run fails with `StringExpected` from a log line | non-string value in `ctx.logger` meta | `String(value)` / `JSON.stringify(value)` |
 | `Promise.all` of steps replays the wrong values | same step name, no key | give each call a `key` |
 | Studio shows no input fields | TS types are erased | `inputSchema` on `fn()` and `workflow()` |
 

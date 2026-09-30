@@ -1,6 +1,6 @@
 ---
 name: agnt5-models
-description: Call a model directly from AGNT5 code without an agent loop - Python agnt5.lm.generate/stream (messages, system_prompt, response_format, cache, store/previous_response_id) and GenerateRequest with tools, TypeScript LM.<provider>().generate/stream (config.maxOutputTokens, reasoningEffort, responseFormat via jsonSchemaFormat, builtInTools, cache, createCache), Go NewOpenAIModel/NewAnthropicModel/NewGoogleModel/NewAzureOpenAIModel plus the OpenAI-compatible constructors with ctx.Generate and GenerateRequest; the provider list and API-key env vars, the provider/model naming rule (bare names in Go), streaming events, and the current model quirks (gpt-6 temperature, Python reasoning_effort and structured-output gaps, TypeScript ReasoningEffort and AbortSignal, Go max_tokens). Use when generating text or JSON from an LLM inside a function, workflow, or tool, choosing a model string, adding a provider, or debugging a 400/invalid-model error from a model call.
+description: Call a model directly from AGNT5 code without an agent loop - Python agnt5.lm.generate/stream (messages, system_prompt, response_format, cache, store/previous_response_id) and GenerateRequest with tools, TypeScript LM.<provider>().generate/stream (config.maxOutputTokens, reasoningEffort, responseFormat via jsonSchemaFormat, builtInTools, cache, createCache), Go NewOpenAIModel/NewAnthropicModel/NewGoogleModel/NewAzureOpenAIModel plus the OpenAI-compatible constructors with ctx.Generate and GenerateRequest; the provider list and API-key env vars, the provider/model naming rule (bare names in Go), streaming events, and the current model quirks (gpt-6 temperature, Python reasoning_effort and structured-output gaps, TypeScript structuredOutput, ReasoningEffort and AbortSignal, Go max_tokens). Use when generating text or JSON from an LLM inside a function, workflow, or tool, choosing a model string, adding a provider, or debugging a 400/invalid-model error from a model call.
 ---
 
 # AGNT5 Models
@@ -85,32 +85,34 @@ Per-language signatures, tool calling, structured output, streaming, and caching
 
 | Feature | Python | TypeScript | Go |
 |---|---|---|---|
-| Structured output | `response_format=PydanticModel \| dataclass \| dict` (schema sent) - **parse `response.text` yourself**, see quirks | `config.responseFormat = jsonSchemaFormat(name, schema, strict)` -> `response.structuredOutput` | none; ask for JSON, `json.Unmarshal(resp.Content)` |
+| Structured output | `response_format=PydanticModel \| dataclass \| dict` (schema sent) - **parse `response.text` yourself**, see quirks | `config.responseFormat = jsonSchemaFormat(name, schema, strict)` (schema sent) - **`JSON.parse(response.text)`**; `response.structuredOutput` is `undefined` | none; ask for JSON, `json.Unmarshal(resp.Content)` |
 | Tools | `GenerateRequest(tools=[ToolDefinition], tool_choice=ToolChoice.AUTO)` via `LMClient(provider).generate()` (`lm.generate()` has no tools) | `tools: [createTool(name, desc, schema)]`, `toolChoice: { choiceType: 'auto' \| 'none' \| 'tool', toolName }` | `Tools: []agnt5.Tool{...}`, read `resp.ToolCalls` |
 | Provider-hosted tools | `built_in_tools=[BuiltInTool.WEB_SEARCH]` | `config.builtInTools: ['web_search', 'code_interpreter', 'file_search', 'web_fetch']` | none |
 | Reasoning | `reasoning_effort=` accepted but **not sent** | `config.reasoningEffort: 'minimal' \| 'medium' \| 'high'` | none |
 | Responses API state | `store=`, `previous_response_id=`, `modalities=` | - | - |
 | Prompt cache | `cache=True \| PromptCache(ttl=, key=, retention=)`; Gemini `lm.create_cache()` | `config.cache: true \| { ttl, key, retention, resource }`; `lm.createCache()` | `Cache: agnt5.EnablePromptCache() \| PromptCacheWithTTL("1h") \| PromptCacheResource(name)`; `GoogleModel.CreateCachedContent` |
-| Streaming | `async for event in lm.stream(...)` -> `lm.content_block.delta` events | `lm.stream(request, chunk => ...)` with `chunkType: 'delta' \| 'completed'` | `StreamingLanguageModel` interface; built-in models only implement `Generate` |
+| Streaming | `async for event in lm.stream(...)` -> `lm.content_block.delta` events in process | `lm.stream(request, chunk => ...)` with `chunkType: 'delta' \| 'completed'` | `StreamingLanguageModel` interface; built-in models only implement `Generate` |
 | Managed prompt | `prompt=Prompt(id=...)`, `variables=` | `prompt: { id, variables }` | - |
 
-## Model quirks (verified 29 Sep 2026)
+## Model quirks (verified 29-30 Sep 2026)
 
 - **gpt-6 family accepts only `temperature` 1.** Python: `lm.generate` sends nothing unless
   you pass it, but `Agent(...)` defaults to `temperature=0.7` - pass `temperature=None`.
-  TypeScript: set `temperature: 1` (or omit it in `config`). Go: stay on non-reasoning models
-  for now. Built-in
-  judge scorers default to `temperature` 0.0, so a gpt-6 judge scores everything 0 - keep
-  judges on another model (`agnt5-scorers`).
+  TypeScript: set `temperature: 1` (or omit it in `config`). Go: use non-reasoning models.
+  Built-in judge scorers default to `temperature` 0.0, so a gpt-6 judge scores
+  everything 0 - keep judges on another model (`agnt5-scorers`).
 - **Python `reasoning_effort` is never sent** - the Rust binding has no such parameter, so the
   value is dropped silently. Use the provider default or TypeScript.
-- **Python `response.structured_output` / `.parsed` / `.object` are always `None`**
- . The schema still goes to the provider; parse the text:
+- **Python `response.structured_output` / `.parsed` / `.object` are always `None`**. The
+  schema still goes to the provider; parse the text:
   `Model.model_validate_json(response.text)` or `json.loads(response.text)`.
 - **Python Pydantic `response_format` under OpenAI strict mode** needs
   `additionalProperties: false` on every object: add `model_config = ConfigDict(extra="forbid")`
   to the model and its nested models. Dataclasses get it automatically; raw dict schemas need
   it added by hand.
+- **TypeScript `response.structuredOutput` is always `undefined`** (0.10.5). The
+  `responseFormat` schema is still sent and `response.text` holds the JSON:
+  `JSON.parse(response.text)`.
 - **TypeScript `ReasoningEffort`** is `'minimal' | 'medium' | 'high'`; `'low'` and `'none'`
   work at runtime with a cast (`'low' as ReasoningEffort`); `'minimal'` returns 400 on
   `gpt-6-luna`.

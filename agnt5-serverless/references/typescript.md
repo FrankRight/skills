@@ -79,14 +79,18 @@ const handler = serveNode({
   // baseUrl?: string | (req) => string  - only if the host rewrites the URL
 });
 createServer((req, res) => { handler(req, res).catch(() => { res.statusCode = 500; res.end(); }); })
-  .listen(Number(process.env.PORT ?? 8787));
+  .listen(Number(process.env.PORT ?? 8787), process.env.HOST);   // HOST=127.0.0.1 locally; unset = all interfaces
 // Express: mount BEFORE any JSON body parser - HMAC needs the raw body
 app.all('/.well-known/agnt5', handler);
 app.all('/agnt5/invoke', handler);
 ```
 
 Fastify and Koa: pass the raw Node request/response objects; never rebuild the body from
-parsed JSON. Sync with `--provider http --immutable-ref <git-sha>`.
+parsed JSON. Sync with `--provider http --immutable-ref <git-sha>`. The `http` scaffold
+(`src/agnt5-serverless.ts`) calls `.listen(port)` with no host, so it listens on all
+interfaces; add the `HOST` argument above for local tests. It ships no `package.json`: create
+one with `"type": "module"`, `npm install @agnt5/sdk`, and run it with a TypeScript runtime,
+for example `HOST=127.0.0.1 node --experimental-strip-types src/agnt5-serverless.ts` on Node 22.
 
 ## `WorkerlessContext` (implements the same `Context` interface as workers)
 
@@ -97,8 +101,8 @@ parsed JSON. Sync with `--provider http --immutable-ref <git-sha>`.
 | `get/set/delete` | Request-scoped map, not checkpointed |
 | `sleep(durationMs, name?)` | Timer suspension |
 | `yieldIfNeeded(reason?)` | Budget suspension |
-| `waitForUser(question, { inputType, options, allowCustom, skippable })` | Resolves to `string \| null` |
-| `waitForSignal<T>(signalName, name?)` | Only implemented here; the worker `ContextImpl` throws `ConfigurationError` |
+| `waitForUser(question, { inputType, options, allowCustom, skippable })` | Resolves to `string \| null`; answers come from `step_events` plus `pause_index`/`user_response` metadata, and each suspension returns the earlier answers as `step_events` |
+| `waitForSignal<T>(signalName, name?)` | Only implemented here; the worker `ContextImpl` throws `ConfigurationError`. Reads `signal_name` / `waiting_step` / `signal_payload` metadata (the latest signal only), so wrap it: `await ctx.step('payment', () => ctx.waitForSignal('payment.settled'))` |
 | `emit(event)` | Collected into the response |
 
 ## Flow control
@@ -129,6 +133,53 @@ expect(await res.json()).toEqual({ status: 'completed', output: { message: 'hell
 ```
 
 Call `FunctionRegistry.clear()`, `WorkflowRegistry.clear()`, `ToolRegistry.clear()` in
-`beforeEach` when tests register components by name. `verifyWorkerlessInvokeRequest(request,
-bodyText, signingSecret, env, ctx)` is exported from `@agnt5/sdk/serverless` internals
-(`workerless.js`) if you need to sign test requests the way the SDK verifies them.
+`beforeEach` when tests register components by name.
+
+To replay, send the previous `checkpoint` back with resume `metadata` (string values): an
+answer as `{ pause_index: '0', user_response: 'approve' }` (earlier answers as
+`step_events: '{"0":"approve"}'`, which each suspension returns), a signal as
+`{ signal_name, waiting_step, signal_payload: JSON.stringify(payload) }`. The checkpoint holds
+no answers, so a signal invoke that follows a question must carry the answer again:
+
+```typescript
+const approve = workflow('approve', async (ctx, input: { orderId: string }) => {
+  const decision = await ctx.waitForUser(`Ship ${input.orderId}?`, {
+    inputType: 'approval',
+    options: [{ id: 'approve', label: 'Approve' }, { id: 'reject', label: 'Reject' }],
+  });
+  if (decision !== 'approve') return { status: 'rejected' };
+  const payment = await ctx.step('payment', () =>
+    ctx.waitForSignal<{ reference: string }>('payment.settled', 'await-payment'));
+  return { status: 'shipped', reference: payment.reference };
+});
+const handler = serve({ serviceName: 'test', workflows: [approve] });
+
+const base = { run_id: 'r2', component_type: 'workflow', component_name: 'approve', input: { orderId: 'o-1' } };
+const post = async (body: object) =>
+  (await (await handler.fetch(new Request('https://x/agnt5/invoke', { method: 'POST', body: JSON.stringify(body) }))).json()) as Record<string, any>;
+const asked = await post(base);                                                   // reason: 'user_input_required'
+const answer = { pause_index: '0', user_response: 'approve' };
+const waiting = await post({ ...base, checkpoint: asked.checkpoint, metadata: answer });   // reason: 'signal'
+const signal = { signal_name: 'payment.settled', waiting_step: 'await-payment', signal_payload: JSON.stringify({ reference: 'pay_123' }) };
+const done = await post({ ...base, checkpoint: waiting.checkpoint, metadata: { ...answer, ...signal } });
+expect(done.status).toBe('completed');
+```
+
+The SDK does not export a signer (`verifyWorkerlessInvokeRequest` is not in the package
+exports). Sign test requests with `node:crypto`; the timestamp is Unix **milliseconds**, and
+seconds fail with 401 `WORKERLESS_SIGNATURE_EXPIRED`:
+
+```typescript
+import { createHmac } from 'node:crypto';
+
+function signedHeaders(secret: string, body: string, attemptId = 'r1:0'): Record<string, string> {
+  const timestamp = String(Date.now());
+  const signature = createHmac('sha256', secret).update(`${timestamp}.${attemptId}.${body}`).digest('hex');
+  return {
+    'X-AGNT5-Signature': `sha256=${signature}`,
+    'X-AGNT5-Signature-Version': 'workerless-hmac-sha256.v1',
+    'X-AGNT5-Timestamp': timestamp,
+    'X-AGNT5-Attempt-ID': attemptId,
+  };
+}
+```

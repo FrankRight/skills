@@ -16,6 +16,25 @@ structured output scoped to the run.
 For recurring behavior across many runs, use `agnt5-pattern-analysis` instead. If a single-run
 investigation shows the problem is probably not isolated, say so and suggest running it.
 
+## Tools
+
+This skill uses the AGNT5 MCP tools. The CLI ships the server: after `agnt5 auth login`,
+register `agnt5 mcp` with your MCP client (Claude Code: `claude mcp add agnt5 -- agnt5 mcp`).
+Without MCP, the `agnt5` CLI covers part of the same ground from inside the project's linked
+directory:
+
+| MCP tool | CLI equivalent |
+|---|---|
+| `list_runs` | `agnt5 inspect runs ls` (`--component`, `--status`, `--since`) |
+| `get_run_summary` | `agnt5 inspect runs describe <run-id>` (prints the trace ID) |
+| `get_trace_excerpt` / `get_trace` | `agnt5 inspect trace -r <run-id>` (`--verbose` for span attributes, `-o json`); it takes the run ID and only finds the project's 200 most recent runs |
+| `get_run_logs` | none that works: `agnt5 inspect logs -r <run-id>` currently returns 403, so use the MCP tool or the run page in Studio |
+| `list_deployments` | `agnt5 deployment list` |
+| `get_llm_usage`, `get_latency_timeseries`, `get_runs_timeseries` | none; Studio Analytics |
+
+`list_runs`, `get_run_summary` and their CLI equivalents read the same run summaries, which
+exist only once a run has finished.
+
 ## Inputs
 
 You need a `run_id` (or a `trace_id`) and its `project_id`.
@@ -88,6 +107,11 @@ unclear. Applications often catch errors (database, auth, HTTP) and continue, so
 looks healthy while the logs record `*_failed` events. Tracebacks in logs give the exact file
 and line — quote them.
 
+Run logs hold what the application logged through the SDK logger (`ctx.logger`, `getLogger`,
+Go `ctx.Logger()` or `slog` with `NewSlogHandler`) plus the run's lifecycle lines
+(`run started`, `component completed`, ...). Plain stdout (`print`, `console.log`, Go
+`log.Printf`) is not there, so a missing line does not prove the code path didn't run.
+
 Logs can be tens to hundreds of KB. Do not read them whole: filter to lines matching
 `error|warn|fail|exception|traceback|timeout|401|403|404|5\d\d|ENOTFOUND|refused`, plus the
 application's own event names (`*_started`, `*_completed`, `*_failed`) around the divergence
@@ -104,8 +128,9 @@ that is the root cause to report.
 
 - Expensive or slow LLM behavior → `get_llm_usage(project_id, run_id=...)` for tokens (input,
   output, cached), cost, and latency per model.
-- Wrong output and online evals are configured → `list_scores(project_id, root_run_id=...)` to
-  see which scorers flagged it, then `get_score_evidence` for the scorer's reasoning. Treat
+- Wrong output and online evals are configured → read the run's online-eval result: the run
+  page in Studio (**Online evals** tab), or the per-run API in `agnt5-online-evals` (Results;
+  it needs a personal API key). `list_scores` does not return online-eval results. Treat
   scorer verdicts as a lead, not proof; confirm against the trace.
 
 ### 5. Compare against a healthy run
@@ -163,7 +188,10 @@ would make the next occurrence diagnosable. Do not invent a cause to fill the ga
   it (`agnt5-deploy`, `agnt5-prompts`, …).
 - Do not expose secrets you see in payloads (API keys, tokens, credentials) — refer to them as
   redacted.
-- If a run is still `running`, say that the picture is incomplete.
+- If a run hasn't finished (queued, running, sleeping or paused), say that the picture is
+  incomplete. Such a run is not in `list_runs` and has no `get_run_summary` yet; its status
+  and events so far come from the gateway (`GET https://gw.agnt5.com/v1/runs/{run_id}` and
+  `…/events` with a service key, see `agnt5-observe`) or the run page in Studio.
 
 ## Output format
 

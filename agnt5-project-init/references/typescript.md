@@ -6,10 +6,19 @@ project.
 
 ## 1. Create or link the project
 
+There is no blank TypeScript scaffold: `agnt5 create --language typescript` and
+`agnt5 init --language typescript` fail with "scaffolding for language … is not supported
+yet". Two paths work:
+
 ```bash
-agnt5 create my-project --language typescript          # blank TypeScript starter
-agnt5 init --language typescript                        # link the current directory
-agnt5 create my-digest --template typescript/quickstart # scaffold from a template (agnt5-ai-templates)
+# A. Start from the quickstart template (agnt5-ai-templates covers the others)
+agnt5 create my-project --template typescript/quickstart --local
+# edit agnt5.yaml: name: my-project   (otherwise the project registers as "quickstart")
+cd my-project && agnt5 init --new --name my-project --workspace <ws> -y
+
+# B. Write package.json, tsconfig.json, app.ts, agnt5.yaml yourself (layout in
+#    agnt5-ai-templates/references/typescript.md), then link the directory
+agnt5 init --new --name my-project --workspace <ws> -y
 ```
 
 A TypeScript `agnt5.yaml`:
@@ -72,7 +81,7 @@ Same `agnt5 run` / Studio flow. TypeScript-specific notes:
   (`--input '{"userEmail": "..."}'`).
 - `agnt5 run my_function` prints the first failed attempt and exits 1 while the platform is
   still retrying a function with `.retry()`; confirm with `agnt5 inspect runs describe <runId>`
- .
+  once the run has finished.
 - Studio shows no input form unless the component declares `inputSchema` (types are erased).
 
 ## Common errors
@@ -91,7 +100,8 @@ Same `agnt5 run` / Studio flow. TypeScript-specific notes:
 | Worker exits with no stack trace mid-run | unhandled rejection — add the handler above |
 | Every failed run reports `EXECUTION_ERROR` | the worker collapses error codes; read the message / your own logs |
 | `getBindingType()` is not `'napi'` | the platform-specific optional dependency (`@agnt5/sdk-linux-x64-gnu`, `-linux-arm64-gnu`, `-darwin-arm64`) did not install; re-run `npm install` on a supported platform |
-| Anything else | `agnt5 dev -v`, then `agnt5 inspect logs -r <runId>` |
+| Run fails with ``Failed to convert JavaScript value `Number …` into rust type `String` `` | a `ctx.logger` attribute value that is not a string; pass `String(value)` |
+| Anything else | `agnt5 dev -v`; `agnt5 dev logs` for the worker's console output, and the run's logs (MCP `get_run_logs` or Studio) for `ctx.logger` lines — `agnt5 inspect logs -r` currently returns 403 |
 
 After moving the project directory: `npm install && agnt5 init && agnt5 dev`.
 

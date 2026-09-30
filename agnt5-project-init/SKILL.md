@@ -69,12 +69,23 @@ template or a description is `agnt5-ai-templates`' job.
 | `--dry-run` | `create`, `init` | Show what would happen without executing |
 | `--new` / `--name <name>` | `init` | Create a fresh empty project and link to it |
 | `--project <id>` | `init` | Link to an existing project instead of scaffolding |
-| `--language <lang>` | `create`, `init` | Scaffolding language (default `agnt5.yaml`'s, else `python`) |
+| `--language <lang>` | `create`, `init` | Only `python` scaffolds; `typescript` and `go` fail with "scaffolding for language … is not supported yet" |
+
+**TypeScript or Go:** start from a template (`agnt5 create my-project --template
+typescript/quickstart` or `go/quickstart`), or write the files yourself and link them with
+`agnt5 init --new --name my-project --workspace <ws> -y`. Details in the reference files.
 
 **Non-interactive (agents, CI):** the CLI prompts for a workspace when the account has more
 than one — pass `--workspace` and `-y`. Verify with `agnt5 info` (the linked project).
+Inside a linked directory, commands use that project's workspace whatever your default is;
+`agnt5 workspace list` marks the default with `*`, and `agnt5 workspace use <name>` changes it.
 
 ## 2. Install dependencies and configure `.env`
+
+The blank Python scaffold pins an old SDK: change `agnt5~=0.8.5` in `pyproject.toml` to the
+current release (`agnt5~=0.13.6`; check with `pip index versions agnt5`) before the first
+`uv sync`. Also delete the `deploy.resources` block from its `agnt5.yaml` — it is not applied
+(see `agnt5-deploy`).
 
 ```bash
 uv sync                  # creates .venv from pyproject.toml
@@ -96,11 +107,22 @@ agnt5 dev -v             # verbose SDK/runtime logging
 agnt5 dev --no-watch     # disable hot reload
 ```
 
+`agnt5 dev -d` and `agnt5 dev status` print hints for `agnt5 run logs`, `agnt5 run status`
+and `agnt5 run stop`. Those commands don't exist; use `agnt5 dev logs`, `agnt5 dev status`
+and `agnt5 dev stop`.
+
+The first `agnt5 dev` in a project creates a service key named `local-dev-<user>-<host>` for
+the worker, without asking and with no expiry. See it with
+`agnt5 service-keys list --project <project-id>`; revoke it with
+`agnt5 service-keys revoke <key-id>` when you stop developing on that machine.
+
 A healthy start prints a banner, the worker command, the coordinator it connected to, the
 registered components (workflows / agents / tools / functions), and a project-scoped **Studio
 URL** (`https://app.agnt5.com/projects/<project-id>/components`) — open that exact link. The
 banner text changes between CLI builds; what matters is `Connected to coordinator` and your
-components listed. `agnt5 components` lists what registered.
+components listed. `agnt5 components --dev` lists what your dev worker registered; plain
+`agnt5 components` reads the production deployment (`--env <name>` or `--deployment <id>`
+for others).
 
 Hot reload watches the project root, `src/`, and `src/<package>/` for `.py .ts .js .go .env`
 changes, so `.env` edits need no restart. `Ctrl+C` stops the worker; the
@@ -127,7 +149,10 @@ deployed worker. There is no session/user flag — session-scoped runs come from
 session_id=...)` (`agnt5-client`). Output is JSON when piped (`| jq`). A function with
 `retries=` shows only its first failed attempt here while the platform keeps retrying. To
 inspect what happened: `agnt5 inspect runs ls`, `agnt5 inspect trace -r <run-id>` (see
-`agnt5-observe`).
+`agnt5-observe`). A run that hasn't finished (sleeping, paused, or still going after
+`--timeout` stopped waiting) is not in `agnt5 inspect runs ls` until it ends, and a timed-out
+`agnt5 run` of a workflow doesn't print the run ID; `agnt5-observe` shows how to find and
+follow it.
 
 ## Common errors
 

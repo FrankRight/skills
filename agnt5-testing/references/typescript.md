@@ -54,27 +54,62 @@ TypeScript types - assert on the `inputSchema`/`outputSchema` you declared if th
 
 ## Fake model for `Agent`
 
-```typescript
-import { Agent } from '@agnt5/sdk';
-import type { GenerateRequest, GenerateResponse } from '@agnt5/sdk';
+The root `GenerateRequest`, `GenerateResponse` and `LanguageModel` types are the agent's model
+contract: a reply is `{ text, usage?, finishReason?, toolCalls? }`. (`LM` responses are
+`LMGenerateResponse` and carry `id` and `model`; returning those fields here fails `tsc` with
+TS2353.) Without a `stream()` method, the agent calls `generate()` for every turn.
 
-const fake = {
-  requests: [] as GenerateRequest[],
+```typescript
+import { beforeEach, expect, it } from 'vitest';
+import { Agent, ToolRegistry, tool } from '@agnt5/sdk';
+import type { Context, GenerateRequest, GenerateResponse, LanguageModel } from '@agnt5/sdk';
+
+class FakeModel implements LanguageModel {
+  readonly requests: GenerateRequest[] = [];
+  constructor(private readonly replies: GenerateResponse[]) {}
+
   async generate(request: GenerateRequest): Promise<GenerateResponse> {
-    fake.requests.push(request);
-    return { id: 'r1', model: 'fake', text: 'The order is in transit.', finishReason: 'stop' };
-  },
-};
-const agent = new Agent({ name: 'support', model: fake, modelName: 'fake-model', instructions: 'Be brief.' });
-const result = await agent.run('Where is my order?');   // AgentOptions.model is `LM | LanguageModel`
-expect(result.output).toBe('The order is in transit.');
+    this.requests.push(request);
+    const reply = this.replies.shift();
+    if (!reply) throw new Error('FakeModel: no replies left');
+    return reply;
+  }
+}
+
+beforeEach(() => ToolRegistry.clear());
+
+it('answers with the canned reply', async () => {
+  const model = new FakeModel([{ text: 'The order is in transit.', finishReason: 'stop' }]);
+  const agent = new Agent({ name: 'support', model, modelName: 'fake-model', instructions: 'Be brief.' });
+  const result = await agent.run('Where is my order?');
+  expect(result.output).toBe('The order is in transit.');
+  expect(model.requests[0].systemPrompt).toContain('Be brief.');
+});
+
+it('drives a tool round', async () => {
+  const lookupOrder = tool(
+    'lookup_order',
+    {
+      description: 'Look up an order.',
+      inputSchema: { type: 'object', properties: { order_id: { type: 'string' } }, required: ['order_id'] },
+    },
+    async (_ctx: Context, args: { order_id: string }) => `Order ${args.order_id} is in transit.`,
+  );
+  const model = new FakeModel([
+    { text: '', toolCalls: [{ id: 'call_1', name: 'lookup_order', arguments: JSON.stringify({ order_id: '42' }) }] },
+    { text: 'Order 42 is in transit.' },
+  ]);
+  const agent = new Agent({ name: 'support', model, modelName: 'fake-model', instructions: 'Use tools.', tools: [lookupOrder] });
+  const result = await agent.run('Where is order 42?');
+  expect(result.output).toBe('Order 42 is in transit.');
+  expect(result.toolCalls.map((c) => c.name)).toEqual(['lookup_order']);
+  expect(JSON.stringify(model.requests[1].messages)).toContain('Order 42 is in transit.');   // tool result went back
+});
 ```
 
 Keep `modelName` free of `/` (or use a real prefix such as `openai/gpt-4o-mini`): a name
 with a slash is validated against the supported provider list even when the model is a fake,
-and `fake/model` throws `ConfigurationError`. Return
-`toolCalls: [{ id, name, arguments: JSON.stringify(args) }]` with empty `text` to drive a
-tool round; the next `generate` call sees the tool result in `request.messages`.
+and `fake/model` throws `ConfigurationError`.
 
 ## Sandbox, state, scorers
 
@@ -114,6 +149,8 @@ expect(await res.json()).toEqual({ status: 'completed', output: { message: 'hell
 ## Against a running gateway
 
 ```typescript
+import { Client } from '@agnt5/sdk';
+
 const client = new Client({ gatewayUrl: process.env.AGNT5_GATEWAY_URL ?? 'http://localhost:34181' });   // agnt5 dev up
 let res = await client.run('greet', { name: 'Ada' }, { waitTimeoutMs: 60_000 });
 if (res.isPending) res = await client.waitForResult(res.runId, 120_000);
@@ -121,4 +158,5 @@ res.raiseForStatus();
 ```
 
 `client.eval` / `client.batchEval` for scored checks (`agnt5-experiments`); gate them behind
-an env flag so unit runs stay offline.
+an env flag so unit runs stay offline. Built-ins that need config take the object form, e.g.
+`scorers: [{ name: 'contains', config: { pattern: 'in transit' } }]` (`agnt5-scorers`).

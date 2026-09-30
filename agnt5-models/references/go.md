@@ -114,8 +114,8 @@ model from `config.model` and resolve keys from `OPENAI_API_KEY`, `ANTHROPIC_API
 
 ## Quirks
 
-- gpt-6 models are not usable from the Go SDK yet (temperature/reasoning handling is not
-  in place yet); use non-reasoning models.
+- gpt-6 models are not usable from Go SDK v0.10.3 (it has no temperature or reasoning handling
+  for them); use non-reasoning models.
 - Anthropic `max_tokens` defaults to 1024; set `MaxTokens` for long answers.
 - `Temperature`/`MaxTokens` are pointers; nil means "not sent".
 - Explicit context caches (`PromptCacheResource`) error on non-Google models;

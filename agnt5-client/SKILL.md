@@ -13,10 +13,17 @@ shell see `agnt5-project-init`.
 ## Setup
 
 ```bash
-agnt5 service-keys create --name backend --project <project-id> [--environment production]   # prints agnt5_sk_... once
+# prints agnt5_sk_... once; add --environment <environment-id> or --deployment <id> to pin it
+agnt5 service-keys create --name backend --project <project-id> --scopes run,workflow
 export AGNT5_API_KEY=agnt5_sk_...
 export AGNT5_GATEWAY_URL=https://gw.agnt5.com     # required for TypeScript; the Python/Go default
 ```
+
+Scopes: `run` (the default) starts runs; `workflow` covers resume, signals, approvals and
+cancel (a `run`-only key gets 403 `INSUFFICIENT_SCOPES` on resume and cancel); `entity` covers
+`/v1/entity/...` and session reads (`client.session()` / `client.entity()`); `admin` covers all.
+`--environment` takes the environment **ID** (`env_id` in `agnt5 deployment list -o json`), not
+its name. Revoke with `agnt5 service-keys revoke <key-id>`.
 
 | | Python | TypeScript | Go |
 |---|---|---|---|
@@ -32,17 +39,20 @@ created for (production by default). A deployment-pinned key rejects a conflicti
 ## Run, submit, wait
 
 `run` blocks until the run finishes **or** the wait budget elapses (default 300 s, Python max
-86400), then returns a **202 pending receipt** instead of raising. Check it every time:
+86400), then returns a **202 pending receipt** instead of raising. A workflow that pauses (a
+human-in-the-loop question or a durable sleep) returns at the pause with status `paused`.
+Check both every time:
 
 ```python
-from agnt5 import Client, RunError
+from agnt5 import Client, RunError, RunStatus
 
 client = Client()
 res = client.run("onboarding", {"email": "ada@example.com"}, component_type="workflow",
                  idempotency_key=f"onboard:{user_id}", wait_timeout=120)
 if res.is_pending:                                   # status_code == 202
     res = client.wait_for_result(res.run_id, timeout=600, poll_interval=2)
-res.raise_for_status()                               # RunError(message, run_id, error_code, attempts, max_attempts)
+if res.status != RunStatus.PAUSED:                   # paused: see "Human-in-the-loop" below
+    res.raise_for_status()                           # RunError(message, run_id, error_code, attempts, max_attempts)
 print(res.output, res.trace_id, res.duration_ms)
 ```
 
@@ -50,7 +60,7 @@ print(res.output, res.trace_id, res.duration_ms)
 import { Client } from '@agnt5/sdk';
 const client = new Client({ gatewayUrl: process.env.AGNT5_GATEWAY_URL });
 let res = await client.run('onboarding', { email }, { componentType: 'workflow', idempotencyKey: `onboard:${userId}`, waitTimeoutMs: 120_000 });
-if (res.isPending) res = await client.waitForResult(res.runId, 600_000, 2_000);
+if (res.isPending && res.status !== 'paused') res = await client.waitForResult(res.runId, 600_000, 2_000);
 res.raiseForStatus();                                // throws RunError
 const output = await client.resolveOutput(res);      // dereferences output_ref for large (serverless) outputs
 ```
@@ -74,10 +84,18 @@ _ = res.DecodeOutput(&out)
 Agent input must contain `"message"`.
 
 Statuses: `pending`, `enqueued`, `queued`, `started`, `running`, `completed`, `failed`,
-`cancelled`, `paused`, `awaiting_input`, `awaiting_user_input`, `timeout`, `unknown`.
-`is_success` = 200 + `completed`; `is_error` = 500 or failed/cancelled/timeout; a paused HITL
-run is neither - see below. `RunError.was_retried` / `exhausted_retries` tell you whether the
-platform already retried.
+`cancelled`, `paused`, `awaiting_input`, `awaiting_user_input`, `timeout`, `unknown`. The
+gateway reports `paused` both for a workflow waiting on a question and for one in a durable
+sleep; `awaiting_input` / `awaiting_user_input` exist in the SDK enums but do not appear.
+`is_success` = 200 + `completed`; `is_error` = 500 or failed/cancelled/timeout. The clients
+flag `paused` differently, so branch on the status itself:
+
+| | Python 0.13.6 | TypeScript 0.10.5 | Go v0.10.3 |
+|---|---|---|---|
+| Paused `run` result | `is_error` (`status_code` 500); `raise_for_status()` raises `RunError` | `isPending`; `raiseForStatus()` passes | `IsPending()`; `RaiseForStatus()` passes |
+| Wait on a paused run | `wait_for_result` polls until its timeout, returns a `timeout` result | `waitForResult` polls until its timeout, throws `RunError` | `WaitForResult` returns at once with `paused` |
+
+`RunError.was_retried` / `exhausted_retries` tell you whether the platform already retried.
 
 ## Streaming
 
@@ -88,8 +106,12 @@ platform already retried.
 | Go | `client.Stream(ctx, name, input, func(chunk string) error {...}, opts...)` | `client.StreamEvents(ctx, name, input, func(ev agnt5.ReceivedEvent) error {...})` |
 
 Streaming needs a streaming-capable component (`agnt5-workflows` async generators, agents).
-Past events of any run: `get_events(run_id)` / `getEvents` / `GetEvents` (journal records
-with `event_type`, `data`, `step_key`, `sequence`).
+Past events of any run: `get_events(run_id)` / `getEvents` / `GetEvents`, which read
+`GET /v1/runs/{run_id}/events` (`{"items": [{event_type, data, metadata, step_key, ...}],
+"count"}`). Python 0.13.6 keeps `metadata` but leaves `input_data`/`output_data` empty
+(the gateway sends `data`); TypeScript keeps `data` but drops `metadata`; Go keeps both. The
+events read is scoped to the sub-tenant: send the same `X-TENANT-ID` the run was started with,
+or `items` comes back empty.
 
 ## Sessions, users, tenants, idempotency
 
@@ -117,29 +139,48 @@ runs many inputs as one batch (`get_batch_status`, `cancel_batch`). `client.eval
 
 ## Human-in-the-loop, signals, cancel
 
-A workflow paused on `wait_for_user` reports `awaiting_user_input` (Python
-`RunStatus.AWAITING_USER_INPUT`); a serverless workflow waiting on a signal reports its
-suspension. Only Go has client methods (`client.ResumeWorkflow(ctx, runID, "approve")`,
-`client.CancelRun(ctx, runID, reason)`); Python and TypeScript call the gateway directly:
+A workflow waiting on `wait_for_user` reports `paused`, and so does one in a durable sleep or
+a serverless workflow waiting on a signal. Keep the run ID from `run` / `submit`: paused and
+in-flight runs are missing from `agnt5 inspect runs ls` (and MCP `list_runs`), and
+`agnt5 inspect runs describe` returns 404 until the run finishes. The gateway's
+`GET /v1/runs?component_name=<name>` does list queued, assigned and paused runs (filters:
+`status`, `deployment_id`, `limit`), which also helps when `agnt5 run --timeout` gives up
+without printing an ID. Follow one run with `GET /v1/runs/{run_id}` (status) and
+`GET /v1/runs/{run_id}/events`.
+
+**Answer only a question.** The newest `workflow.paused` event of a question has
+`metadata.pause_reason: "user_input_required"` with `pause_index` and `question`; a durable
+sleep's has `data.reason: "timer"`. A resume sent during a sleep is accepted and its answer
+goes to the next question without that question being shown. Per-language helpers:
+`agnt5-human-in-the-loop`.
+
+Only Go has client methods (`client.ResumeWorkflow(ctx, runID, "approve")`,
+`client.CancelRun(ctx, runID, reason)`); Python and TypeScript call the gateway directly. These
+calls need a key with the `workflow` scope; a `run`-only key gets 403 `INSUFFICIENT_SCOPES`:
 
 ```bash
 # answer a wait_for_user pause; user_response arrives in the workflow as a string
 curl -X POST "$AGNT5_GATEWAY_URL/v1/workflows/resume/<run_id>" \
   -H "X-API-KEY: $AGNT5_API_KEY" -H "Content-Type: application/json" \
   -d '{"user_response": "approve"}'
-# deliver a signal to a serverless workflow waiting on ctx.wait_for_signal("payment.settled")
+# deliver a signal to a serverless workflow waiting on wait_for_signal("payment.settled")
 curl -X POST "$AGNT5_GATEWAY_URL/v1/runs/<run_id>/signals/payment.settled" \
   -H "X-API-KEY: $AGNT5_API_KEY" -H "Content-Type: application/json" -d '{"payload": {"reference": "pay_123"}}'
-curl -X POST "$AGNT5_GATEWAY_URL/v1/runs/<run_id>/cancel" -H "X-API-KEY: $AGNT5_API_KEY"
+# cancel; the body is optional (reason defaults to "manual")
+curl -X POST "$AGNT5_GATEWAY_URL/v1/runs/<run_id>/cancel" \
+  -H "X-API-KEY: $AGNT5_API_KEY" -H "Content-Type: application/json" -d '{"reason": "operator stop"}'
 ```
 
 Auth is `X-API-KEY` (`agnt5_sk_` service key or `agnt5_uk_` user key), or
 `Authorization: Bearer <token>` plus `X-WORKSPACE-ID` and `X-PROJECT-ID`. Resume returns
-404 for an unknown run and 409 unless the run is `paused`. Answer formats (live-verified
-29 Sep 2026 for TypeScript/Go): text/approval/select send the plain string or option id;
-multiselect sends a JSON array string (`"[\"a\",\"b\"]"`); skip sends `"__skipped__"`; any
-non-string JSON is stringified, so `null` arrives as the string `"null"`, not a skip. Details
-and replay rules: `agnt5-human-in-the-loop`. Agent approvals use
+404 for an unknown run and 409 unless the run is `paused`; cancel returns 409 for a finished
+run. The signal call answers `{"run_id", "signal_id", "signal_name", "resumed", ...}`, with
+`resumed: true` when it woke a run paused on that signal. Answer formats (live-verified 29 Sep
+2026 for TypeScript/Go): text/approval/select send the plain string or option id; multiselect
+sends a JSON array string (`"[\"a\",\"b\"]"`); skip sends `"__skipped__"`; any non-string JSON
+is stringified, so `null` arrives as the string `"null"`, not a skip. Details and replay rules:
+`agnt5-human-in-the-loop`; signal waits in Python 0.13.6 serverless workflows need the
+workaround in `agnt5-serverless`. Agent approvals use
 `POST /v1/runs/{run_id}/approvals/{approval_id}/approve|reject` with optional
 `{"decided_by", "reason", "payload"}`.
 
@@ -147,9 +188,13 @@ and replay rules: `agnt5-human-in-the-loop`. Agent approvals use
 
 `POST /v1/{functions|workflows|agents|tools}/{name}/run` (JSON body = input; header
 `X-AGNT5-Wait-Timeout-Ms`), `.../submit`, `.../stream` (SSE), `.../batch`,
-`GET /v1/status/{run_id}`, `GET /v1/result/{run_id}`, `GET /v1/runs/{run_id}/events`,
-`POST /v1/eval`, `GET|DELETE /v1/batches/{batch_id}`, `POST /v1/agents/{name}/chat`. Studio's
-**copy curl** on a component pre-fills `X-API-KEY`, `X-WORKSPACE-ID`, and `X-DEPLOYMENT-ID`.
+`GET /v1/runs` (list, including unfinished runs), `GET /v1/runs/{run_id}`,
+`GET /v1/status/{run_id}`, `GET /v1/result/{run_id}`,
+`GET /v1/runs/{run_id}/events` (JSON; SSE with `Accept: text/event-stream`),
+`POST /v1/runs/{run_id}/cancel`, `POST /v1/eval`, `GET|DELETE /v1/batches/{batch_id}`,
+`POST /v1/agents/{name}/chat`, `POST /v1/events` (publish an internal event; see
+`agnt5-webhooks-integrations`). Studio's **copy curl** on a component pre-fills `X-API-KEY`,
+`X-WORKSPACE-ID`, and `X-DEPLOYMENT-ID`.
 
 ## Local targets
 
