@@ -159,11 +159,11 @@ tool names are exported from the root `@agnt5/sdk` package (no `agnt5.tool` subm
 Same rules as the SKILL.md: the run reports `paused` for a question and for a durable
 `ctx.sleep()`, only the newest `workflow.paused` event tells them apart, and resume and cancel
 need a key with the `workflow` scope (`--scopes run,workflow`; a `run`-only key gets 403
-`INSUFFICIENT_SCOPES`). Unfinished runs are missing from `agnt5 inspect runs ls`; find them
-with `GET /v1/runs?component_name=<workflow>`. TypeScript workers emit no
-`approval.requested`; the question sits in the `workflow.paused` metadata. `Client` has no
-resume method and `client.getEvents()` drops each event's `metadata`, so read the events with
-`fetch`:
+`INSUFFICIENT_SCOPES`). Find a paused run you lost with `agnt5 inspect runs ls --status paused`
+(CLI `20260930-a31e8d` or later) or `GET /v1/runs?component_name=<workflow>`. TypeScript
+workers emit no `approval.requested`; the question sits in the `workflow.paused` metadata.
+`Client` has no resume method and `client.getEvents()` drops each event's `metadata`, so read
+the events with `fetch`:
 
 ```typescript
 import { Client } from '@agnt5/sdk';

@@ -172,7 +172,7 @@ ID; `agnt5-observe` shows how to follow or cancel it.
 | Worker won't register / "no project" errors | `agnt5 init` to link a project, re-run `agnt5 dev` |
 | Auth errors | `agnt5 auth login` (`agnt5 auth logout` first if you switched accounts) |
 | Wrong workspace / project not found | `agnt5 workspace list`, then `agnt5 workspace use <name>` |
-| A component is missing | `agnt5 components`; check it is imported/registered in `app.py` (or `Worker(auto_register=True)`) |
+| A component is missing | `agnt5 components --dev`; check it is imported/registered in `app.py` (or `Worker(auto_register=True)`) |
 | `TypeError: Function 'x' requires FunctionContext as first argument` | Inside a workflow call it through `ctx.step(x, ...)` (`agnt5-workflows`) |
 | `ConfigurationError: Tool function 'x' first parameter must be 'ctx: Context'` | Annotate the first tool parameter exactly `ctx: Context` (`from agnt5.context import Context`) |
 | `TypeError: got an unexpected keyword argument 'deployment_id'` on a triggered workflow | Declare it `async def h(ctx, event: dict, **_)` (`agnt5-webhooks-integrations`) |

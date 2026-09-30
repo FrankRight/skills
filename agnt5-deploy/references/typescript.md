@@ -48,8 +48,8 @@ agnt5 run my_agent --type agent --input '{"message": "..."}' --deployment-id <de
 
 Reading logs after deploy:
 
-- `ctx.logger.*` and `getLogger('...')` records reach the run's logs: MCP `get_run_logs` or
-  the run in Studio (`agnt5 inspect logs -r` currently returns 403). `ctx.logger` attribute
+- `ctx.logger.*` and `getLogger('...')` records reach the run's logs: `agnt5 inspect logs -r
+  <runId>` (older CLIs answer 403), MCP `get_run_logs` or the run in Studio. `ctx.logger` attribute
   values must be strings — `{ attempt: String(ctx.attempt) }`; a number fails the run with
   ``Failed to convert JavaScript value `Number …` into rust type `String` ``.
 - Plain `console.log` / `console.error` from a deployed worker are not shown anywhere:

@@ -196,9 +196,9 @@ _, err = client.CancelRun(ctx, res.RunID, "operator stop")                 // PO
 ```
 
 `WaitForResult` counts `paused` as finished and returns at once with `Status ==
-agnt5.RunStatusPaused`. Paused runs are missing from `agnt5 inspect runs ls` and
-`agnt5 inspect runs describe` returns 404 until the run finishes, so keep `res.RunID`
-(`GET /v1/runs?component_name=<workflow>` on the gateway lists unfinished runs). Studio
+agnt5.RunStatusPaused`. Keep `res.RunID`; to find a paused run you lost, use
+`agnt5 inspect runs ls --status paused` (CLI `20260930-a31e8d` or later) or the gateway's
+`GET /v1/runs?component_name=<workflow>`. Studio
 and `agnt5 run` handle the pause UI for you; `ResumeWorkflow` is for your own backend.
 
 ## Not available in Go

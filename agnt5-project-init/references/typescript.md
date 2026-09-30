@@ -88,7 +88,7 @@ Same `agnt5 run` / Studio flow. TypeScript-specific notes:
 | `ERR_MODULE_NOT_FOUND ... './src/functions'` | ESM needs the `.js` suffix on relative imports even for `.ts` sources: `./src/functions.js` |
 | `SyntaxError: Cannot use import statement outside a module` | add `"type": "module"` to `package.json` |
 | `TS7006` / type errors appear only in CI | `tsx` does not type-check; run `npx tsc --noEmit` locally |
-| Component missing from the banner / `agnt5 components` | module not imported in `app.ts`; for agents, `worker.registerAgents([...])` |
+| Component missing from the banner / `agnt5 components --dev` | module not imported in `app.ts`; for agents, `worker.registerAgents([...])` |
 | `ECONNREFUSED ...:34186` at startup | `agnt5 dev` is not running, or a stale `AGNT5_COORDINATOR_ENDPOINT` |
 | `OPENAI_API_KEY` errors / runs fail immediately | key missing from `.env`; when running by hand add `import 'dotenv/config'` |
 | `ConfigurationError: Provider 'openai' does not match model prefix` | `modelName` prefix must match the `LM` provider |
@@ -97,7 +97,7 @@ Same `agnt5 run` / Studio flow. TypeScript-specific notes:
 | Every failed run reports `EXECUTION_ERROR` | the worker collapses error codes; read the message / your own logs |
 | `getBindingType()` is not `'napi'` | the platform-specific optional dependency (`@agnt5/sdk-linux-x64-gnu`, `-linux-arm64-gnu`, `-darwin-arm64`) did not install; re-run `npm install` on a supported platform |
 | Run fails with ``Failed to convert JavaScript value `Number …` into rust type `String` `` | a `ctx.logger` attribute value that is not a string; pass `String(value)` |
-| Anything else | `agnt5 dev -v`; `agnt5 dev logs` for the worker's console output, and the run's logs (MCP `get_run_logs` or Studio) for `ctx.logger` lines — `agnt5 inspect logs -r` currently returns 403 |
+| Anything else | `agnt5 dev -v`; `agnt5 dev logs` for the worker's console output, and the run's logs (`agnt5 inspect logs -r <runId>`, MCP `get_run_logs` or Studio) for `ctx.logger` lines |
 
 After moving the project directory: `npm install && agnt5 init && agnt5 dev`.
 
