@@ -129,8 +129,7 @@ curl -s -X POST "$API/eval/online/experiments/<id>/publish" -H "X-API-KEY: $AGNT
 Publishing checks every pin, freezes a new version and enables it: the response shows
 `"enabled": true` and `status` `active` (`pending_application` until the runtime confirms). The
 first live experiment in a project moves the whole project from legacy online evals to
-runtime-owned ones (`online_eval_owner` changes from `legacy` to `runtime`). Without
-`"confirm_project_cutover": true` that first publish returns 409.
+runtime-owned ones. Without `"confirm_project_cutover": true` that first publish returns 409.
 
 ## Operate it
 

@@ -107,7 +107,7 @@ Full preset list: `Correctness`, `Faithfulness`, `Helpfulness`, `Coherence`, `Co
 
 Judge failures are scores, not exceptions: a provider error comes back as `score=0.0,
 passed=False, explanation="LLM call failed: …"`. The default `temperature=0.0` is one such
-error on `openai/gpt-6*` models (they reject any temperature), so a gpt-6 judge silently
+error on `openai/gpt-6*` models (they reject any temperature but `1`), so a gpt-6 judge silently
 scores everything 0 — keep judges on a non-gpt-6 model (the Go SDK's built-in judges and the
 Python presets share this default).
 
@@ -225,7 +225,9 @@ agnt5 scores evidence <score-id> --include scorer_input,scorer_output,evidence
 Filters on `scores list`: `--run-id`, `--run-item-id`, `--scorer-id`, `--scorer-version-id`,
 `--subject-type`, `--subject-id`, `--session-id`, `--root-run-id`, `--component-name`,
 `--component-type`, `--journal-id`, `--span-id`, `--since`, `--until`. The MCP equivalents are
-`list_scores` and `get_score_evidence`. For online-eval results see `agnt5-online-evals`.
+`list_scores` and `get_score_evidence`. `scores list` can show `score: null` and an empty
+`explanation`; the recorded values are in `scores evidence`, as `value` and `comment`. For
+online-eval results see `agnt5-online-evals`.
 
 ## Source
 

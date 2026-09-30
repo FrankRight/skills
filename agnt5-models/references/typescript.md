@@ -83,7 +83,10 @@ const verdict = JSON.parse(res.text) as { label: string; confidence: number };
 ```
 
 The schema reaches the provider and `res.text` is the JSON document, but `res.structuredOutput`
-is `undefined` in 0.10.5, so parse the text. `ResponseFormatOption` is
+is `undefined` in 0.10.5, so parse the text. Strict mode needs every property in `required`, so
+an optional field has to be nullable (`type: ['string', 'null']`), and the SDK's schema type
+rejects that array form (`tsc` TS2322). Keep such schemas to required, non-null fields, or turn strict mode
+off (`jsonSchemaFormat(name, schema, false)`). `ResponseFormatOption` is
 `{ formatType: 'text' | 'json' | 'json_schema', schemaName?, schema? (JSON string), strict? }`.
 
 ## Streaming

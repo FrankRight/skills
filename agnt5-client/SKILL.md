@@ -19,6 +19,10 @@ export AGNT5_API_KEY=agnt5_sk_...
 export AGNT5_GATEWAY_URL=https://gw.agnt5.com     # required for TypeScript; the Python/Go default
 ```
 
+The `agnt5` CLI reads `AGNT5_API_KEY` too. In a shell with a service key exported, CLI
+commands that talk to the control plane (`info`, `inspect`, `secrets`, `deploy`, …) answer
+401: run the CLI from another shell, or as `env -u AGNT5_API_KEY agnt5 …`.
+
 Scopes: `run` (the default) starts runs; `workflow` covers resume, signals, approvals and
 cancel (a `run`-only key gets 403 `INSUFFICIENT_SCOPES` on resume and cancel); `entity` covers
 `/v1/entity/...` and session reads (`client.session()` / `client.entity()`); `admin` covers all.
@@ -79,12 +83,16 @@ _ = res.DecodeOutput(&out)
 ```
 
 `submit` returns immediately with `run_id` (+ `status_url`); poll with `get_status` /
-`getStatus` / `GetStatus` (`is_complete`, `is_running`) and fetch with `get_result`.
+`getStatus` / `GetStatus` (`is_complete`, `is_running`) and fetch with `get_result`. Poll every
+few seconds at most: several scripts polling every 2–3 s on one key can hit the gateway's rate
+limit, which answers with the plain-text body `rate limit exceeded`, not JSON.
 `component_type` defaults to `"function"` everywhere - pass `workflow`, `agent`, or `tool`.
 Agent input must contain `"message"`.
 
-Statuses: `pending`, `enqueued`, `queued`, `started`, `running`, `completed`, `failed`,
-`cancelled`, `paused`, `awaiting_input`, `awaiting_user_input`, `timeout`, `unknown`. The
+Statuses: `pending`, `enqueued`, `queued`, `assigned`, `started`, `running`, `retry_delayed`,
+`completed`, `failed`, `cancelled`, `paused`, `awaiting_input`, `awaiting_user_input`,
+`timeout`, `unknown`. Treat anything not terminal as still running: right after `Submit`, Go's
+`GetStatus` can report `unknown`. The
 gateway reports `paused` both for a workflow waiting on a question and for one in a durable
 sleep; `awaiting_input` / `awaiting_user_input` exist in the SDK enums but do not appear.
 `is_success` = 200 + `completed`; `is_error` = 500 or failed/cancelled/timeout. The clients
@@ -140,13 +148,11 @@ runs many inputs as one batch (`get_batch_status`, `cancel_batch`). `client.eval
 ## Human-in-the-loop, signals, cancel
 
 A workflow waiting on `wait_for_user` reports `paused`, and so does one in a durable sleep or
-a serverless workflow waiting on a signal. Keep the run ID from `run` / `submit`: paused and
-in-flight runs are missing from `agnt5 inspect runs ls` (and MCP `list_runs`), and
-`agnt5 inspect runs describe` returns 404 until the run finishes. The gateway's
-`GET /v1/runs?component_name=<name>` does list queued, assigned and paused runs (filters:
-`status`, `deployment_id`, `limit`), which also helps when `agnt5 run --timeout` gives up
-without printing an ID. Follow one run with `GET /v1/runs/{run_id}` (status) and
-`GET /v1/runs/{run_id}/events`.
+a serverless workflow waiting on a signal. Keep the run ID from `run` / `submit`. To find one
+you lost: `agnt5 inspect runs ls --status paused` (CLI `20260930-a31e8d` or later; the MCP
+`list_runs` tool does not list unfinished runs yet), or the gateway's
+`GET /v1/runs?component_name=<name>` (filters: `status`, `deployment_id`, `limit`). Follow one
+run with `GET /v1/runs/{run_id}` (status) and `GET /v1/runs/{run_id}/events`.
 
 **Answer only a question.** The newest `workflow.paused` event of a question has
 `metadata.pause_reason: "user_input_required"` with `pause_index` and `question`; a durable

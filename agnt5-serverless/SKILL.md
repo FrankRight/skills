@@ -58,12 +58,12 @@ app = FastAPI()
 async def hello(ctx, name: str = "world") -> dict[str, str]:
     return {"message": f"hello {name}"}
 
-agnt5_serverless = serve(
+agnt5_workerless = serve(
     service_name="orders-api",
     service_version=os.getenv("GIT_SHA", "local"),
     signing_secret=lambda: os.getenv("AGNT5_SERVERLESS_SIGNING_SECRET"),
 )
-agnt5_serverless.mount_fastapi(app)      # also mount_starlette / mount_flask / django_urlpatterns / wsgi_app
+agnt5_workerless.mount_fastapi(app)      # also mount_starlette / mount_flask / django_urlpatterns / wsgi_app
 ```
 
 ```typescript

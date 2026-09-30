@@ -233,7 +233,6 @@ await worker.run();
 |---|---|---|
 | A charge/email repeats after a HITL resume or sleep | direct `fn(ctx, ...)` call in the workflow body | wrap in `ctx.step(name, ..., { key })` |
 | `.retry()` ignored inside a workflow | retry only applies to top-level function runs | `executeWithRetry` inside the step |
-| `agnt5 run <function>` exits 1 while the run later succeeds | CLI prints the first failed attempt; platform keeps retrying | check `agnt5 inspect runs describe <runId>` |
 | Worker process exits mid-run | unhandled promise rejection | `process.on('unhandledRejection', ...)` in `app.ts` |
 | Every failure shows `EXECUTION_ERROR` | worker maps all errors to one code | log `err.name` / `err.constructor.name` yourself |
 | Run fails with `StringExpected` from a log line | non-string value in `ctx.logger` meta | `String(value)` / `JSON.stringify(value)` |

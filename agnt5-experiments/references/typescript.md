@@ -135,7 +135,6 @@ sequence, correlationId }], runId }`) if you need to build dataset `events` your
 | Judge preset calls OpenAI although you set a Claude model | a bare preset `model` means provider `openai` | `model: 'anthropic/<model>'` |
 | `config_error` from a built-in such as `contains` | bare name sends no config | `{ name: 'contains', config: { pattern: 'in transit' } }` (`agnt5-scorers`) |
 | Run status shows `EXECUTION_ERROR` for every failure | worker collapses error codes | read `item.error` text / worker logs |
-| `agnt5 run <function>` exits 1 during a smoke test although the run later passes | CLI prints first failed attempt | check `agnt5 inspect runs describe` |
 
 ## Source
 

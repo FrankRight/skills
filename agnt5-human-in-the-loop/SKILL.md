@@ -139,10 +139,9 @@ and during a durable `ctx.sleep()`. `awaiting_user_input` never appears. `agnt5 
 `client.run(...)` return at the first pause with `status: paused` and the run ID. In 0.13.6
 that `RunResponse` has `is_error == True` and `raise_for_status()` raises
 `RunError("Run failed with status: paused")`, so test `res.status == RunStatus.PAUSED` first.
-Keep the ID: paused and in-flight runs are missing from `agnt5 inspect runs ls` (and MCP
-`list_runs`), and `agnt5 inspect runs describe` returns 404 until the run finishes. The
-gateway's run list does include them, which helps when `agnt5 run --timeout` gives up without
-printing an ID. Follow the run on the gateway:
+Keep the ID. To find a paused run you lost, use `agnt5 inspect runs ls --status paused` (CLI
+`20260930-a31e8d` or later; MCP `list_runs` does not list unfinished runs yet) or the gateway's
+run list below. Follow the run on the gateway:
 
 | Call | Use |
 |---|---|
@@ -181,6 +180,9 @@ curl -X POST "$AGNT5_GATEWAY_URL/v1/workflows/resume/<run_id>" \
   -H "X-API-KEY: $AGNT5_API_KEY" -H "Content-Type: application/json" \
   -d '{"user_response": "approve"}'
 ```
+
+Keep the service key out of the shell you run the `agnt5` CLI in: the CLI reads
+`AGNT5_API_KEY` too, and its control-plane commands answer 401 with a service key.
 
 To pin the key to one environment add `--environment <environment-id>`: it takes the ID
 (`env_id` in `agnt5 deployment list -o json`), not the name.

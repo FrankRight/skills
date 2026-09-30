@@ -33,10 +33,10 @@ agnt5 version update                                     # every time -- a stale
 agnt5 create my-weather-agent --template python/weather-agent   # optional: --version v1.0.0 or name@v1.0.0
 ```
 
-The project is registered under the `name:` in the template's `agnt5.yaml` (for example
-`quickstart` or `agnt5-customer-service`), not the directory name you passed. To choose the
-name, scaffold with `--local`, edit `name:`, then link:
-`agnt5 init --new --name <name> --workspace <ws> -y`.
+The project takes the name you passed (`my-weather-agent`): the CLI rewrites the `name:` in the
+template's `agnt5.yaml`. CLIs older than `20260930-a31e8d` registered the template's own name
+(`quickstart`, `agnt5-customer-service`) instead; with one of those, scaffold with `--local`,
+edit `name:`, then link: `agnt5 init --new --name <name> --workspace <ws> -y`.
 
 Known template caveats — fix these right after scaffolding:
 
@@ -60,6 +60,11 @@ Known template caveats — fix these right after scaffolding:
   );
   ```
 
+- `typescript/quickstart` ships both `package-lock.json` and `pnpm-lock.yaml`. Keep the one
+  for the package manager you use and delete the other, so installs don't disagree.
+- `python/weather-agent` still calls the deprecated `ctx.task(...)` (use `ctx.step(...)`,
+  `agnt5-workflows`) and imports `setup_module_logger` from the private `agnt5._telemetry` in
+  `app.py` and `test.py` (use the public `from agnt5 import get_logger`, `agnt5-observe`).
 - `go/quickstart`: `main.go` picks `claude-3-5-haiku-20241022` when `ANTHROPIC_API_KEY` is
   set and `gpt-5-mini` otherwise. Change `newSummarizerModel()` to the model you want.
 
@@ -226,7 +231,7 @@ async def my_workflow(ctx: WorkflowContext, message: str) -> dict:
 __all__ = ["my_workflow"]
 ```
 
-Parallel fan-out (`ctx.parallel` / `gather` / `batch` / `map`), durable sleep, cron schedules,
+Parallel fan-out (`ctx.parallel` / `gather`), durable sleep, cron schedules,
 state, idempotency: **`agnt5-workflows`**. Human approval/input pauses: **`agnt5-human-in-the-loop`**.
 Webhook/event triggers and chat bots: **`agnt5-webhooks-integrations`**.
 

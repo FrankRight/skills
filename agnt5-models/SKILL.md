@@ -52,7 +52,7 @@ response = await lm.generate(
     messages=[{"role": "user", "content": question}],   # or prompt="..." for one turn
     max_tokens=200,                                      # temperature defaults to None (not sent)
 )
-print(response.text, response.usage.total_tokens, response.finish_reason)
+print(response.text, response.usage.total_tokens)   # finish_reason is None in Python 0.13.6
 ```
 
 ```typescript

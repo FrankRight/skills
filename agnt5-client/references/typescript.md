@@ -63,10 +63,10 @@ if (res.isPending && res.status !== 'paused') res = await client.waitForResult<R
 res.raiseForStatus();
 const report = await client.resolveOutput(res);   // undefined while the run is paused
 
-// typed event stream from an agent
-for await (const ev of client.events('support_agent', { message }, { componentType: 'agent', sessionId })) {
-  if (ev.eventType === 'output.delta') process.stdout.write(ev.data.content);
-  if (ev.eventType === 'run.completed') console.log(ev.data.output);
+// event stream from an agent; events() takes no sessionId (run() and chat() do)
+for await (const ev of client.events('support_agent', { message }, { componentType: 'agent' })) {
+  if (ev.eventType === 'lm.message.delta') process.stdout.write(ev.data.content);
+  if (ev.eventType === 'run.completed') console.log(ev.data.output_data);
 }
 
 // answer a HITL pause / send a signal / cancel (no client methods; the key needs the `workflow` scope)
