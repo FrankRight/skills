@@ -60,7 +60,7 @@ Retry semantics (0.13.6):
   "non-retryable" exception type, so validate inputs before the side effect.
 - Retries apply when the function runs on its own (`agnt5 run`, `Client.run`), **not** when a
   workflow calls it through `ctx.step()` — the step gets the first attempt's error
-  (AGNT5-1372). Loop inside the function body if a step needs retries today.
+ . Loop inside the function body if a step needs retries today.
 - `agnt5 run <function>` prints the first failed attempt and exits 1 while the platform keeps
   retrying — check the stored run (`agnt5 inspect runs describe <run-id>`) for the outcome.
 

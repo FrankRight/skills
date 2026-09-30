@@ -88,8 +88,8 @@ export const draftReply = fn('draft_reply').run(
 const reply = await ctx.step('draft_reply', () => draftReply(ctx, { customerName, topic }), { key: ticketId });
 ```
 
-The docs page says a `fn(...).run(...)` call checkpoints on its own; in 0.10.5 it does not
-(AGNT5-1373) — always go through `ctx.step`.
+The docs page says a `fn(...).run(...)` call checkpoints on its own; in 0.10.5 it does not —
+always go through `ctx.step`.
 
 ## Compatibility note
 
@@ -150,14 +150,14 @@ user message, keep the tool list stable, use the same `modelName` string.
 
 ## TypeScript pitfalls
 
-| Symptom | Cause | Fix | Ticket |
-|---|---|---|---|
-| `new Prompt({...})` has no `variables` field | wrong `Prompt` (MCP class) | use a plain `{ id, variables }` object | — |
-| Prompt re-generates on every HITL resume | `draftReply(ctx, ...)` called without `ctx.step` | wrap in `ctx.step` | AGNT5-1373 |
-| OpenAI 400 on `gpt-6-*` | `temperature` sent by default (0.7 on agents) | `temperature: 1` on the agent, `config.temperature: 1` on `generate`, or `temperature: 1` in the prompt front matter | AGNT5-1302 |
-| `reasoningEffort: 'low'` does not type-check | `ReasoningEffort` is `'minimal' \| 'medium' \| 'high'`; `'minimal'` 400s on gpt-6-luna | `reasoningEffort: 'low' as ReasoningEffort` (works at runtime) | AGNT5-1327 |
-| `response.usage.cachedTokens` — "possibly undefined" | `usage` is optional | `response.usage?.cachedTokens` | — |
-| Prompt file not found in the deployed worker | resolved from `process.cwd()` | keep `prompts/` at the project root next to `app.ts` | — |
+| Symptom | Cause | Fix |
+|---|---|---|
+| `new Prompt({...})` has no `variables` field | wrong `Prompt` (MCP class) | use a plain `{ id, variables }` object |
+| Prompt re-generates on every HITL resume | `draftReply(ctx, ...)` called without `ctx.step` | wrap in `ctx.step` |
+| OpenAI 400 on `gpt-6-*` | `temperature` sent by default (0.7 on agents) | `temperature: 1` on the agent, `config.temperature: 1` on `generate`, or `temperature: 1` in the prompt front matter |
+| `reasoningEffort: 'low'` does not type-check | `ReasoningEffort` is `'minimal' \| 'medium' \| 'high'`; `'minimal'` 400s on gpt-6-luna | `reasoningEffort: 'low' as ReasoningEffort` (works at runtime) |
+| `response.usage.cachedTokens` — "possibly undefined" | `usage` is optional | `response.usage?.cachedTokens` |
+| Prompt file not found in the deployed worker | resolved from `process.cwd()` | keep `prompts/` at the project root next to `app.ts` |
 
 ## Source
 

@@ -18,7 +18,7 @@ response = await lm.generate(
     cache=None,                             # True | PromptCache(...) | ContextCache | str
     response_format=None,                   # Pydantic model class, dataclass, or JSON-schema dict
     built_in_tools=None,                    # [BuiltInTool.WEB_SEARCH, .CODE_INTERPRETER, .FILE_SEARCH, .WEB_FETCH]
-    reasoning_effort=None,                  # ReasoningEffort.MINIMAL | MEDIUM | HIGH - accepted, never sent (AGNT5-1370)
+    reasoning_effort=None,                  # ReasoningEffort.MINIMAL | MEDIUM | HIGH - accepted, never sent
     modalities=None, store=None, previous_response_id=None,   # OpenAI Responses API
     variables=None, project_id=None, environment=None, environment_id=None, prompt_version=None,  # managed prompts
 )
@@ -27,7 +27,7 @@ response = await lm.generate(
 `GenerateResponse` fields: `text`, `usage` (`prompt_tokens`, `completion_tokens`,
 `total_tokens`, `cached_tokens`, `cache_creation_tokens`), `finish_reason`, `tool_calls`
 (list of dicts), `response_id`. `structured_output` / `parsed` / `object` exist but return
-`None` in 0.13.6 (AGNT5-1371).
+`None` in 0.13.6.
 
 `prompt` and `messages` are mutually exclusive with a managed prompt (`prompt=Prompt(id=...)`
 or the deprecated `prompt_ref=`); runtime model overrides from Studio are applied before the

@@ -132,7 +132,7 @@ Presets: `Correctness`, `Faithfulness`, `Helpfulness`, `Coherence`, `Conciseness
 `Stereotyping` — each embeds `EvaluatorPresetConfig{Model, IncludeInput *bool, Temperature,
 Threshold *float64, ContextFields, ...}`. `agnt5.NamedScorer("json_valid")` builds a bare spec.
 
-Model naming rule (AGNT5-1374): typed presets and `NewLLMJudge` split `provider/model` into
+Model naming rule: typed presets and `NewLLMJudge` split `provider/model` into
 `provider` + `model`; a raw `EvalScorerSpec.Config["model"]` is sent to the provider verbatim, so
 `"openai/gpt-4.1-mini"` there is a 400 `invalid model ID` — use a bare name (and optionally
 `"provider": "anthropic"`). Any gpt-6 judge fails because the judge always sends
@@ -150,7 +150,7 @@ Tests: `agnt5.WithLLMJudgeModel(ctx, agnt5.StaticModel{Content: `{"score":1,"pas
 
 - `req.Input["key"]` does not compile (`Input` is `any`) — the product-docs snippet does this;
   type-assert first.
-- Raw judge specs need bare model names; presets accept `provider/model` (AGNT5-1374).
+- Raw judge specs need bare model names; presets accept `provider/model`.
 - A scorer registered with a name already taken (including built-in names) fails with
   `ScorerNameCollisionError` at registration.
 - Scorers deploy with the worker: after `agnt5 deploy`, wait for the Go build to finish and the

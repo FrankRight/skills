@@ -96,5 +96,5 @@ of third-party SDK calls.
   worker; it is the build.
 - Bare model names and explicit `APIKey` are required (`"openai/gpt-4o-mini"` is a 400 in
   production exactly as locally).
-- Reasoning models: Go agents with tools fail on gpt-6 over Chat Completions (AGNT5-1325);
-  stay on `gpt-4o-mini`/`gpt-4.1-mini` for deployed agents until AGNT5-1285 lands.
+- Reasoning models: Go agents with tools fail on gpt-6 over Chat Completions;
+  stay on `gpt-4o-mini`/`gpt-4.1-mini` for deployed agents for now.

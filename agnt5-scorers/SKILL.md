@@ -79,8 +79,8 @@ Full preset list: `Correctness`, `Faithfulness`, `Helpfulness`, `Coherence`, `Co
 Judge failures are scores, not exceptions: a provider error comes back as `score=0.0,
 passed=False, explanation="LLM call failed: …"`. The default `temperature=0.0` is one such
 error on `openai/gpt-6*` models (they reject any temperature), so a gpt-6 judge silently
-scores everything 0 — keep judges on a non-gpt-6 model (AGNT5-1374 tracks the Go SDK; the
-Python presets have the same default).
+scores everything 0 — keep judges on a non-gpt-6 model (the Go SDK's built-in judges and the
+Python presets share this default).
 
 ## Custom scorers
 

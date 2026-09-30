@@ -258,7 +258,7 @@ workflows, lower it for CPU-bound work.
    - Model `openai/gpt-4o-mini` unless the user names another; ask when unsure rather than
      guessing a model name. For `openai/gpt-6*` pass `temperature=None` to `Agent` (the
      default 0.7 is rejected with a 400) and do not use `reasoning_effort` — the native
-     binding never sends it (AGNT5-1370). Details: `agnt5-models`.
+     binding never sends it. Details: `agnt5-models`.
    - Keep `prompts/` and `skills/` inside the project and out of `.gitignore`: they resolve
      against the worker's working directory and must ship in the deploy bundle.
 6. **Hand off** to `agnt5-project-init` (`uv sync`, `.env`, `agnt5 dev`, `agnt5 run`).

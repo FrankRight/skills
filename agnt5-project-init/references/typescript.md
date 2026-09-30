@@ -56,7 +56,7 @@ component list. `agnt5 dev` sets `AGNT5_COORDINATOR_ENDPOINT`; the SDK default i
 fallback and never hardcode a remote endpoint.
 
 Put this in `app.ts` — an unhandled promise rejection otherwise terminates the worker process
-mid-run (AGNT5-1352):
+mid-run:
 
 ```typescript
 process.on('unhandledRejection', (reason) => {
@@ -72,7 +72,7 @@ Same `agnt5 run` / Studio flow. TypeScript-specific notes:
   (`--input '{"userEmail": "..."}'`).
 - `agnt5 run my_function` prints the first failed attempt and exits 1 while the platform is
   still retrying a function with `.retry()`; confirm with `agnt5 inspect runs describe <runId>`
-  (AGNT5-1372).
+ .
 - Studio shows no input form unless the component declares `inputSchema` (types are erased).
 
 ## Common errors
@@ -88,8 +88,8 @@ Same `agnt5 run` / Studio flow. TypeScript-specific notes:
 | `OPENAI_API_KEY` errors / runs fail immediately | key missing from `.env`; when running by hand add `import 'dotenv/config'` |
 | `ConfigurationError: Provider 'openai' does not match model prefix` | `modelName` prefix must match the `LM` provider |
 | `TS2345: ... not assignable to parameter of type 'ContextImpl'` | `new AskUserTool(ctx as ContextImpl)` |
-| Worker exits with no stack trace mid-run | unhandled rejection — add the handler above (AGNT5-1352) |
-| Every failed run reports `EXECUTION_ERROR` | the worker collapses error codes (AGNT5-1358); read the message / your own logs |
+| Worker exits with no stack trace mid-run | unhandled rejection — add the handler above |
+| Every failed run reports `EXECUTION_ERROR` | the worker collapses error codes; read the message / your own logs |
 | `getBindingType()` is not `'napi'` | the platform-specific optional dependency (`@agnt5/sdk-linux-x64-gnu`, `-linux-arm64-gnu`, `-darwin-arm64`) did not install; re-run `npm install` on a supported platform |
 | Anything else | `agnt5 dev -v`, then `agnt5 inspect logs -r <runId>` |
 
@@ -99,7 +99,7 @@ After moving the project directory: `npm install && agnt5 init && agnt5 dev`.
 
 - `uv sync` / `pyproject.toml` (npm + `package.json`), `Worker(auto_register=True)`
 - `agnt5[openai]`-style extras: capture libraries are plain npm dependencies (`openai`, `@openai/agents`, `ai`, `@google/adk`)
-- Trace output for TS runs in `agnt5 inspect trace` (AGNT5-1320) — use logs
+- Trace output for TS runs in `agnt5 inspect trace` — use logs
 
 ## Source
 

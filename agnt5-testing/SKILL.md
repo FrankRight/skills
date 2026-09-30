@@ -161,7 +161,7 @@ Exit code 2 = gate failed, 3 = run failed, 4 = timeout. Full flow in `agnt5-expe
 
 ## Pitfalls
 
-- **`agnt5 run <function>` can report a failure that is still being retried** (AGNT5-1372):
+- **`agnt5 run <function>` can report a failure that is still being retried**:
   the streaming function path prints the first failed attempt as the final result while the
   platform keeps retrying. Confirm the real outcome with `agnt5 inspect runs` / Studio, or
   poll `client.wait_for_result(run_id)`; wrap retried functions in a workflow for CLI smoke

@@ -23,7 +23,7 @@ func DraftReply(ctx *agnt5.Context, in DraftInput) (string, error) {
             {Role: agnt5.MessageRoleSystem, Content: supportSystemPrompt},          // byte-identical every call
             {Role: agnt5.MessageRoleUser, Content: renderUser(in.Customer, in.Topic)}, // dynamic content here
         },
-        Temperature: &temp,     // omit for reasoning models (gpt-6 family rejects it; AGNT5-1303 unmerged)
+        Temperature: &temp,     // omit for reasoning models (gpt-6 family rejects it; fix not yet released)
         MaxTokens:   &maxTokens,
     })
     if err != nil {
@@ -82,5 +82,5 @@ Managed `Prompt`/`PromptRef`, `prompts/*.mdx`, version selection, `LLMRuntimeOpt
 - Agents cannot set `MaxTokens`; the Anthropic provider always sends `max_tokens: 1024` unless
   the request sets it, so long outputs need `ctx.Generate` with `MaxTokens` (or a
   `LanguageModel` wrapper — see `agnt5-agents-tools`).
-- Sending `Temperature`/`MaxTokens` to a gpt-6 model is rejected (AGNT5-1303 unmerged) and the
-  judge's fixed `temperature: 0` makes gpt-6 unusable as a judge (AGNT5-1374).
+- Sending `Temperature`/`MaxTokens` to a gpt-6 model is rejected (fix not yet released) and the
+  judge's fixed `temperature: 0` makes gpt-6 unusable as a judge.

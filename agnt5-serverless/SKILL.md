@@ -113,7 +113,7 @@ finishing. Compare before porting:
 | State | Py `ctx.state`, `ctx.session.state`, `ctx.user.state`; Go `ctx.State()`, `ctx.Memory()` | Py/TS `await ctx.get/set/delete` - a plain map that lives for **one invoke** and is not checkpointed; Go has none. Anything needed after a suspension must be a step result |
 | Sleep | `ctx.sleep(seconds, name=)` / `ctx.sleep(ms, name)` / `ctx.Sleep(d, opts...)` | Same names; returns a timer suspension and resumes on reinvoke (Py seconds, TS ms, Go `time.Duration` + name) |
 | Human input | Py `ctx.wait_for_user`; TS `ctx.waitForUser`; Go `ctx.AskUser`/`RequestApproval` | Py `ctx.wait_for_user(question, input_type=, options=, allow_custom=, skippable=)`; TS `ctx.waitForUser(q, {inputType, options, allowCustom, skippable})`; Go `ctx.WaitForUser(serverless.UserInput{...})` |
-| External signal | Py: no method; TS `ctx.waitForSignal` **throws** `ConfigurationError` (AGNT5-1355); Go: no method | Py `await ctx.wait_for_signal(name, name=step)`; TS `await ctx.waitForSignal<T>(name, step?)`; Go `serverless.WaitForSignal[T](ctx, name, step)` |
+| External signal | Py: no method; TS `ctx.waitForSignal` **throws** `ConfigurationError`; Go: no method | Py `await ctx.wait_for_signal(name, name=step)`; TS `await ctx.waitForSignal<T>(name, step?)`; Go `serverless.WaitForSignal[T](ctx, name, step)` |
 | Budget | n/a | `await ctx.yield_if_needed()` / `ctx.yieldIfNeeded()` / `ctx.YieldIfNeeded()` |
 | Model call helper | Go `ctx.Generate(model, req)` | Go: none - call `model.Generate(ctx, req)` (`*serverless.Context` embeds `context.Context`) |
 | Events | `ctx.emit(...)` streamed live | `ctx.emit(...)` / `ctx.Emit(Event{...})` returned in the invoke response, appended to the journal |

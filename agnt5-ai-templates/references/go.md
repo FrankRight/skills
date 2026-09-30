@@ -265,9 +265,9 @@ every other provider sends the string verbatim, so `"openai/gpt-4o-mini"` is a 4
 Warnings:
 
 - Default to `gpt-4o-mini` (or `gpt-4.1-mini`). gpt-6 / reasoning models: tool-using agents fail
-  over Chat Completions without `reasoning_effort`, which Go cannot set (AGNT5-1325); an
-  agent-level `Temperature`/`MaxTokens` would be rejected anyway (AGNT5-1303 unmerged); product
-  decision pending (AGNT5-1285). Workaround if the user insists: an `OpenAIConfig.HTTPClient`
+  over Chat Completions without `reasoning_effort`, which Go cannot set; an
+  agent-level `Temperature`/`MaxTokens` would be rejected anyway (fix not yet released); product
+  decision pending. Workaround if the user insists: an `OpenAIConfig.HTTPClient`
   whose `Transport` rewrites the JSON body.
 - The Anthropic provider always sends `max_tokens: 1024` unless a `GenerateRequest` sets
   `MaxTokens`; agents cannot, so Anthropic-backed agent replies are capped at 1024 tokens.

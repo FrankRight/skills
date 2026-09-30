@@ -88,7 +88,7 @@ const decision = await ctx.waitForUser(`Approve this draft?\n\n${draft}`, {     
 ```
 
 - A bare `await generateDraft(ctx, ...)` before the pause runs again on every resume
-  (AGNT5-1373) — this is the single most common TypeScript HITL bug.
+  — this is the single most common TypeScript HITL bug.
 - A `try { ... } catch (err) { ... }` around the pause (or around an agent that holds HITL
   tools) swallows the suspension and the run "completes" with your fallback value. If you
   must catch, rethrow pauses:
@@ -105,7 +105,7 @@ try {
 ```
 
 - There is no `ctx.isReplay` / `ctx._is_replay`; log lines before a pause print twice.
-- `waitForUser` has no timeout option (AGNT5-1355): a run waits until someone answers.
+- `waitForUser` has no timeout option: a run waits until someone answers.
 
 ## Multi-step HITL with state
 
@@ -158,7 +158,7 @@ tool names are exported from the root `@agnt5/sdk` package (no `agnt5.tool` subm
 - **Unexpected text**: `Number(raw)` and check `Number.isNaN`; `raw` may be `null`.
 - **Conditional pauses** inside `if` are fine; the pause index counts executed calls only.
 - **`ctx.waitForSignal(name)`** is on `Context` but throws `ConfigurationError` in the local
-  context and fails on managed workers too (AGNT5-1355). Do not use it for external events;
+  context and fails on managed workers too. Do not use it for external events;
   poll from a `ctx.step` or start the workflow from a webhook trigger instead. (The serverless
   runtime has its own signal support — see `agnt5-serverless`.)
 - **Unit tests**: build a `ContextImpl`, call `setUserResponse(pauseIndex, answer)` for each
@@ -169,21 +169,21 @@ tool names are exported from the root `@agnt5/sdk` package (no `agnt5.tool` subm
 - `ctx._is_replay`
 - `ctx.state.set(...)` (sync) — use `await ctx.set(...)`
 - `agnt5.tool.AskUserTool` submodule import path (root export instead)
-- A timeout on `waitForUser` (AGNT5-1355)
-- `ctx.waitForSignal` on managed workers (AGNT5-1355)
+- A timeout on `waitForUser`
+- `ctx.waitForSignal` on managed workers
 - `ctx.session.state` between pauses (run-scoped `ctx.get/set` only)
 
 ## TypeScript pitfalls
 
-| Symptom | Cause | Fix | Ticket |
-|---|---|---|---|
-| LLM call / email repeats after the user answers | side effect not in `ctx.step` | `ctx.step(name, ..., { key })` before the pause | AGNT5-1373 |
-| Run completes with a fallback instead of pausing | `try/catch` swallowed `WaitingForUserInputError` | rethrow with `isWaitingForUserInput(err)` | — |
-| `topics.split(',')` yields `['["a"', '"c"]']` | multiselect answer is a JSON string | `JSON.parse` first (`selections()` above) | — |
-| `note === null` never true after Skip | skip arrives as the string `"null"` | treat `null`, `'null'`, `''` as skipped | — |
-| `new AskUserTool(ctx)` does not type-check | constructor takes `ContextImpl` | `ctx as ContextImpl` | — |
-| Approval never times out | no timeout support | add an operator-side deadline outside the run | AGNT5-1355 |
-| `waitForSignal` throws | unsupported on this runtime | webhook trigger or polling step | AGNT5-1355 |
+| Symptom | Cause | Fix |
+|---|---|---|
+| LLM call / email repeats after the user answers | side effect not in `ctx.step` | `ctx.step(name, ..., { key })` before the pause |
+| Run completes with a fallback instead of pausing | `try/catch` swallowed `WaitingForUserInputError` | rethrow with `isWaitingForUserInput(err)` |
+| `topics.split(',')` yields `['["a"', '"c"]']` | multiselect answer is a JSON string | `JSON.parse` first (`selections()` above) |
+| `note === null` never true after Skip | skip arrives as the string `"null"` | treat `null`, `'null'`, `''` as skipped |
+| `new AskUserTool(ctx)` does not type-check | constructor takes `ContextImpl` | `ctx as ContextImpl` |
+| Approval never times out | no timeout support | add an operator-side deadline outside the run |
+| `waitForSignal` throws | unsupported on this runtime | webhook trigger or polling step |
 
 ## Source
 

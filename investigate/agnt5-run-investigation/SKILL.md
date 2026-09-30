@@ -69,11 +69,11 @@ Two things to check while reading spans:
   mismatch is itself a finding — the check is reading the wrong key or type.
 - **Empty trace?** If the excerpt returns `total_spans: 0`, the logs are your only source.
   Say so in the report.
-- **TypeScript workers record no spans at all** (`@agnt5/sdk` up to 0.10.5, Linear
-  AGNT5-1320): every TypeScript run, failed or successful, has `total_spans: 0`. Treat that as
+- **TypeScript workers record no spans at all** (`@agnt5/sdk` up to 0.10.5): every
+  TypeScript run, failed or successful, has `total_spans: 0`. Treat that as
   expected, not as an anomaly of the project, and work from `get_run_logs` and the run's
   events. The logs carry the run ID and trace ID. TypeScript workers also report every failure
-  with `error_type: EXECUTION_ERROR` (AGNT5-1358), so read the real error name and message
+  with `error_type: EXECUTION_ERROR`, so read the real error name and message
   from the logs, not from the run summary. Tell whether a worker is TypeScript from the
   deployment's language or a `tsx`/`node` start command in its logs.
 - **Observed spans** (`capture_mode=observed`, from automatic OpenAI / OpenAI Agents SDK /
@@ -92,7 +92,7 @@ Logs can be tens to hundreds of KB. Do not read them whole: filter to lines matc
 `error|warn|fail|exception|traceback|timeout|401|403|404|5\d\d|ENOTFOUND|refused`, plus the
 application's own event names (`*_started`, `*_completed`, `*_failed`) around the divergence
 point. For Go workers add `panic:|goroutine `, and for TypeScript workers add
-`UnhandledPromiseRejection|Error:` (an unhandled rejection exits the whole worker, AGNT5-1352).
+`UnhandledPromiseRejection|Error:` (an unhandled rejection exits the whole worker).
 Page with `offset` if the failure is past the first page.
 
 **If the run is `completed`, do not assume it succeeded.** Check the logs for failed side
