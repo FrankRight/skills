@@ -27,6 +27,9 @@ citesOrderID := agnt5.ScorerConfig{
         input, _ := req.Input.(map[string]any) // Input/Output/Expected are `any`
         orderID, _ := input["order_id"].(string)
         output := fmt.Sprint(req.Output)
+        if m, ok := req.Output.(map[string]any); ok && m["response"] != nil {
+            output = fmt.Sprint(m["response"]) // an agent's reply; its messages include the system prompt
+        }
         if orderID != "" && strings.Contains(output, orderID) {
             return agnt5.PassingScorerResult("Order ID " + orderID + " found"), nil
         }

@@ -19,11 +19,12 @@ For a full root-cause analysis with evidence, use `agnt5-run-investigation` inst
 agnt5 inspect runs ls --status failed --since 1h
 agnt5 inspect runs describe <runId>
 agnt5 inspect trace -r <runId>
+agnt5 inspect logs -r <runId>
 ```
 
-For the run's logs use the MCP tool `get_run_logs` (below) or the run page in Studio:
-`agnt5 inspect logs -r <runId>` currently fails with `403 … Workspace context is required
-for this action`.
+These need CLI `20260930-a31e8d` or later (`agnt5 version update`); on older CLIs
+`inspect logs` answers `403 … Workspace context is required for this action`, so read the logs
+with the MCP tool `get_run_logs` (below) or on the run page in Studio.
 
 Run the commands inside the linked project directory; they read that project.
 
@@ -62,18 +63,25 @@ agnt5 inspect runs describe <runId>
 | `--output json` / `-o json` | Machine-readable |
 
 Each run records: run ID, component name+type, status, duration, queue time, step count,
-retries, LLM call count, LLM cost, error (on failure). `describe` also prints next-step
+retries, LLM call count, LLM cost, error (on failure). Two gaps today: `step_count` is 0 for
+TypeScript and Go runs and for Python workflows, so count steps from the trace or the run's
+events; and a failed Go workflow's summary has no error type or message, so read the error
+from its trace and logs. `describe` also prints next-step
 commands (`agnt5 inspect logs -r ...`, `agnt5 inspect trace -r ...`).
 
 ### Runs that haven't finished
 
-`agnt5 inspect runs ls`, `describe`, and the MCP `list_runs` / `get_run_summary` read a
-summary written when a run ends. A queued, running, sleeping or paused run is not listed, and
-`describe` answers 404 ("No summary") until it finishes. `agnt5 run` returns at the run's
-first pause with `status: paused` and the run ID; with `--timeout` on a workflow it gives up
-without printing the ID.
+Run summaries are written when a run ends. The CLI also reads queued, running and paused runs
+from the gateway: `agnt5 inspect runs ls` lists them (`--status paused`, `--status running`),
+and `describe` and `trace` work on them; `describe` notes that step, retry and LLM totals
+arrive once the run ends. The MCP `list_runs` / `get_run_summary` tools, and CLIs older than
+`20260930-a31e8d`, only show a run after it ends (`describe` answers 404 "No summary").
+`agnt5 run` returns at the run's first pause with `status: paused` and the run ID; for a
+function or workflow it also prints the run ID when it stops waiting.
 
-Follow such a run through the gateway with a service key (`agnt5-deploy`):
+To cancel such a run, or follow it without the CLI, use the gateway with a service key
+(`agnt5-deploy`). Export it only where you run these calls: the CLI reads `AGNT5_API_KEY` too,
+and its control-plane commands answer 401 with a service key.
 
 ```bash
 curl -s -H "X-API-KEY: $AGNT5_API_KEY" "https://gw.agnt5.com/v1/runs?component_name=my_workflow&limit=10"  # unfinished runs too (queued, assigned, ...)
@@ -96,6 +104,9 @@ agnt5 inspect trace -r <runId> --verbose   # include span attrs: inputs/outputs/
 agnt5 inspect trace -r <runId> --output json > trace.json
 ```
 
+Spans can take about a minute to arrive after a run ends. "No spans found" right after a run
+usually means "not yet": retry before concluding the trace is empty.
+
 Tree example:
 ```
 workflow.travel_booking_workflow      [27.9s]
@@ -113,11 +124,9 @@ older run, take the trace ID from `agnt5 inspect runs describe` and use the MCP
 ## Logs
 
 A run's logs hold what your code logged through the SDK logger (`ctx.logger`, `get_logger`)
-plus the run's lifecycle lines. Read them with the MCP tool
-`get_run_logs(run_id, project_id)` or on the run page in Studio.
-
-`agnt5 inspect logs -r <runId>` (with `--severity`, `--follow`, `--tail`) is the CLI command
-for this, but it currently fails with `403 … Workspace context is required for this action`.
+plus the run's lifecycle lines. Read them with `agnt5 inspect logs -r <runId>` (`--severity`,
+`--follow`, `--tail`; older CLIs answer 403), the MCP tool `get_run_logs(run_id, project_id)`,
+or the run page in Studio.
 
 Plain stdout/stderr (`print`, `console.log`, Go `log.Printf`) never reaches a run's logs.
 Locally it prints in the `agnt5 dev` terminal (`agnt5 dev logs` when detached). A deployed

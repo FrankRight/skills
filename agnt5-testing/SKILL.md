@@ -117,7 +117,7 @@ Feed the returned `checkpoint` back to test replay and resume (`agnt5-serverless
 
 ```bash
 agnt5 dev                                   # worker connected to your AGNT5 environment, hot reload
-agnt5 components                            # what registered, by type
+agnt5 components --dev                      # what the dev worker registered (plain `components` reads production)
 agnt5 run greet --input '{"name":"Ada"}'                       # function (streams) - routes to the dev worker
 agnt5 run onboarding --type workflow --input '{"email":"ada@example.com"}'
 agnt5 run support_agent --type agent --input '{"message":"hi"}'
@@ -134,11 +134,11 @@ Studio while the dev worker runs.
 ```bash
 agnt5 deployment list                  # ID of the deployment you just shipped
 agnt5 run onboarding --type workflow --input '{"email":"ada@example.com"}' --deployment-id <id>
-agnt5 run onboarding --type workflow --input '{...}' --deployment-id <id> --timeout 5m   # client-side limit; run continues
+agnt5 run onboarding --type workflow --input '{...}' --deployment-id <id> --timeout 20m  # wait up to 20m (default 5m); the run continues either way
 ```
 
-Target the deployment by ID. `--env preview` currently answers 409 "environment has no active
-deployment" even when a preview deployment is running.
+Target the deployment by ID, or use `--env preview` for whatever preview routes to (CLI
+`20260930-a31e8d` or later; older CLIs ignored `--env` and ran on production).
 
 From code (`agnt5-client`): `Client(deployment_id=...)` / `new Client({ deploymentId })` /
 `agnt5.WithClientDeploymentID`, then `client.run(...)`, or score in one call:
@@ -174,11 +174,8 @@ Exit code 2 = gate failed, 3 = run failed, 4 = timeout. Full flow in `agnt5-expe
 
 ## Pitfalls
 
-- **`agnt5 run <function>` can report a failure that is still being retried**:
-  the streaming function path prints the first failed attempt as the final result while the
-  platform keeps retrying. Confirm the real outcome with `agnt5 inspect runs` / Studio, or
-  poll `client.wait_for_result(run_id)`; wrap retried functions in a workflow for CLI smoke
-  tests.
+- `agnt5 run <function>` waits through the function's retries, so a smoke test sees the final
+  outcome; retries do not apply to a function called through `ctx.step()` (`agnt5-workflows`).
 - Workflow direct calls in Python take keyword arguments only and skip replay - do not assert
   on checkpoint behaviour offline.
 - HITL workflows re-run from the top on resume; anything before the pause must be a step

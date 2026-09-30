@@ -32,7 +32,7 @@ agent = Agent(
 | `handoffs` | no | Agents to delegate full control to |
 | `sandbox` | no | `Sandbox()` for isolated file/code execution |
 | `max_iterations` | no | Max reasoning loops, default `10` |
-| `temperature` / `max_tokens` / `top_p` | no | The only sampling settings. Default temperature `0.7` is sent unless you pass `temperature=None` (sends nothing) — required for `openai/gpt-6*`, which rejects any temperature; `gpt-5*` / `o1*` already send none. No `reasoning_effort` on `Agent` |
+| `temperature` / `max_tokens` / `top_p` | no | The only sampling settings. Default temperature `0.7` is sent unless you pass `temperature=None` (sends nothing) — required for `openai/gpt-6*`, which rejects any temperature but `1`; `gpt-5*` / `o1*` already send none. No `reasoning_effort` on `Agent` |
 | `model_config` | no | Accepted but **not read** in 0.13.6 (stored on the agent, never used). Custom endpoints come from provider env vars read by the native layer: `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `OPENROUTER_BASE_URL`, `DEEPSEEK_BASE_URL`, `MOONSHOT_BASE_URL`, `TOGETHER_BASE_URL`, plus `OPENAI_ORGANIZATION`, `OPENAI_PROJECT`, `OPENAI_REQUEST_TIMEOUT_SECS` |
 | `cache` | no | `True` or `lm.PromptCache(...)` — provider prompt caching (see `agnt5-prompts`) |
 | `callbacks` / `before_*_callback` / `after_*_callback` | no | Guardrail hooks — see Callbacks below |
@@ -40,18 +40,20 @@ agent = Agent(
 
 Run with `result = await agent.run("...")`. `AgentResult` fields: `output`, `tool_calls`
 (e.g. `[{"name": "get_weather", "arguments": '{"city": "Paris"}', "iteration": 1}]`),
-`handoff_to`, `handoff_metadata` (the handoff tool's result dict; `None` without a handoff).
+`handoff_to`, `handoff_metadata` (the handoff tool's result dict; `{}` without a handoff).
 `run()` and `stream()` also take `history=[Message, ...]` (prior turns prepended to the
 conversation) and `prompt_context={"var": value}` (fills `{{var}}` placeholders in
-`instructions`). `agent.cumulative_cost_usd` sums the LLM cost of every run on that `Agent`
-instance. Stream with `async for event in agent.stream("..."):` and check `event.event_type`:
+`instructions`). `agent.cumulative_cost_usd` is meant to sum the LLM cost of every run on that
+`Agent` instance, but stays `0.0` in-process in 0.13.6; read a run's cost from its summary
+(`llm_cost_usd`, `agnt5-observe`). Stream with `async for event in agent.stream("..."):` and
+check `event.event_type`:
 
 | Event type | When it fires |
 |---|---|
 | `agent.started` / `agent.completed` / `agent.failed` | Agent loop begins / ends with a final answer / errors |
 | `lm.content_block.started` / `.delta` / `.completed` | LLM response block streaming (`block_type` is `text` or `thinking`) |
 | `tool_call.started` / `tool_call.completed` / `tool_call.failed` | A tool call |
-| `skill.loaded` | The agent loaded a SKILL.md (see `agnt5-agent-skills`) |
+| `skill.loaded` | The agent loaded a SKILL.md; recorded in the run's journal, not yielded by an in-process `stream()` (see `agnt5-agent-skills`) |
 
 `agent.iteration.started` / `.completed` are recorded on the run's events (the trace) but are not
 yielded by `agent.stream()`.

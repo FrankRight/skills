@@ -9,8 +9,8 @@ different for a TypeScript worker and the code-side logging, span and capture AP
 TypeScript workers do not export trace spans, so for a TS run
 `agnt5 inspect trace -r <runId>` and Studio's Trace tab have no span tree to show. Use instead
 `agnt5 inspect runs describe <runId>` (status, duration, step count, error) and the run's
-logs — your `ctx.logger` lines — through the MCP tool `get_run_logs` or the run page in
-Studio (`agnt5 inspect logs -r` currently returns 403).
+logs — your `ctx.logger` lines — through `agnt5 inspect logs -r <runId>`, the MCP tool
+`get_run_logs` or the run page in Studio.
 
 The run's *journal events* (`workflow.step.*`, `function.*`, `agent.*`, `lm.*`,
 `tool_call.*`) are still recorded and drive the Studio run timeline, scorers and

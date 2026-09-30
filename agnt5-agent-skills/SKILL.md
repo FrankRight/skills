@@ -95,15 +95,11 @@ workspace under `skills/<name>/`, so the agent can run them with sandbox tools w
 setup. Without a sandbox, `load_skill` still returns instructions, but bundled scripts can't
 run.
 
-Each load emits a `skill.loaded` event (`skill_name`, `instructions_length`,
-`resources_materialized` = bundled files copied into the sandbox):
-
-```python
-from agnt5 import SkillLoaded
-async for event in agent.stream("Analyze this PDF"):
-    if isinstance(event, SkillLoaded):
-        print(f"Loaded: {event.skill_name} ({event.instructions_length} chars)")
-```
+Each load records a `skill.loaded` event in the run's journal (`skill_name`,
+`instructions_length`, `resources_materialized` = bundled files copied into the sandbox). See it
+on the run's timeline in Studio or in `GET /v1/runs/<run-id>/events` (`agnt5-observe`). An
+in-process `agent.stream()` does not yield it in 0.13.6: the stream only carries the
+`tool_call.*` events for the `load_skill` call.
 
 ## AGENTS.md — always-on guidance
 

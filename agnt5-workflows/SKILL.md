@@ -61,8 +61,8 @@ Retry semantics (0.13.6):
 - Retries apply when the function runs on its own (`agnt5 run`, `Client.run`), **not** when a
   workflow calls it through `ctx.step()` — the step gets the first attempt's error
  . Loop inside the function body if a step needs retries today.
-- `agnt5 run <function>` prints the first failed attempt and exits 1 while the platform keeps
-  retrying — check the stored run (`agnt5 inspect runs describe <run-id>`) for the outcome.
+- `agnt5 run <function>` waits through the attempts and prints the final result, or the last
+  attempt's error (exit 1); `retry_count` in `agnt5 inspect runs describe` shows how many.
 
 ## Steps: the unit of durable work
 
@@ -106,8 +106,10 @@ async def order_workflow(ctx: WorkflowContext, order_id: str) -> dict:
 |---|---|
 | `ctx.parallel(*tasks)` | Small fixed number of independent stages (2-5); results come back in call order |
 | `ctx.gather(**tasks)` | Same as `parallel()` but you want results addressable by name |
-| `ctx.batch(func, items, max_concurrency=10)` | Many items (10+), need concurrency control and per-item error handling |
-| `ctx.map(func, items, max_concurrency=10)` | Like `batch()` but you only need the outputs and want to fail-fast |
+| `ctx.parallel` over chunks | Many items (10+): bound the concurrency yourself (below) |
+
+`ctx.batch()` and `ctx.map()` exist but raise `ImportError: cannot import name
+'get_function_config' from 'agnt5.function'` in agnt5 0.13.6, offline and on a worker alike.
 
 ```python
 # parallel — positional, ordered
@@ -124,24 +126,17 @@ data = await ctx.gather(
 )
 # data["revenue"], data["users"]
 
-# batch — many items, controlled concurrency, partial failure tolerant
-result = await ctx.batch(
-    process_document,
-    [{"doc_id": d} for d in doc_ids],
-    max_concurrency=20,
-    continue_on_failure=True,
-    timeout_per_item=30.0,
-)
-# result.stats.completed_items, result.stats.failed_items, result.outputs
-
-# map — simpler wrapper, raises on any failure
-outputs = await ctx.map(process_document, [{"doc_id": d} for d in doc_ids])
+# many items — keyed steps, at most 10 at a time
+outputs = []
+for start in range(0, len(doc_ids), 10):
+    chunk = doc_ids[start:start + 10]
+    outputs += await ctx.parallel(
+        *[ctx.step(process_document, doc_id, key=f"doc-{doc_id}") for doc_id in chunk]
+    )
 ```
 
-Items that are not dicts are wrapped as `{"value": item}`, so the function must accept
-`value=`. `timeout_per_item` defaults to 30 s; `map` is `batch(..., continue_on_failure=False)`.
-`BatchResult` exposes `.outputs` (`None` for failed items), `.successful_outputs`,
-`.failed_items`, and `.stats.completed_items` / `.stats.failed_items`.
+A step that fails makes `ctx.parallel` raise. To let one item fail without the rest, catch
+inside `process_document` and return an error value.
 
 ## Durable sleep
 

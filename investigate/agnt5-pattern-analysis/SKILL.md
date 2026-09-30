@@ -24,14 +24,14 @@ you to the right neighborhood; the pattern itself is usually found by reading ra
 This skill uses the AGNT5 MCP tools. The CLI ships the server: after `agnt5 auth login`,
 register `agnt5 mcp` with your MCP client (Claude Code: `claude mcp add agnt5 -- agnt5 mcp`).
 Without MCP, the `agnt5` CLI covers part of the same ground from inside the project's linked
-directory:
+directory (CLI `20260930-a31e8d` or later; run `agnt5 version update` first):
 
 | MCP tool | CLI equivalent |
 |---|---|
-| `list_runs` | `agnt5 inspect runs ls` (`--component`, `--component-type`, `--status`, `--since`, `--limit`) |
+| `list_runs` | `agnt5 inspect runs ls` (`--component`, `--component-type`, `--status`, `--since`, `--limit`); the CLI also lists runs that have not ended, `list_runs` does not |
 | `get_run_summary` | `agnt5 inspect runs describe <run-id>` (prints the trace ID) |
-| `get_trace_excerpt` / `get_trace` | `agnt5 inspect trace -r <run-id>` (`--verbose` for span attributes, `-o json`); it takes the run ID and only finds the project's 200 most recent runs |
-| `get_run_logs` | none that works: `agnt5 inspect logs -r <run-id>` currently returns 403, so use the MCP tool or the run page in Studio |
+| `get_trace_excerpt` / `get_trace` | `agnt5 inspect trace -r <run-id>` (`--verbose` for span attributes, `-o json`); it takes the run ID, looks in the project's 200 most recent run summaries, then asks the gateway, which also has runs that have not ended |
+| `get_run_logs` | `agnt5 inspect logs -r <run-id>` (`--severity`, `--tail`, `--follow`) |
 | `list_deployments` | `agnt5 deployment list` |
 | `get_deployment_events` | `agnt5 deployment errors` (the project's latest deployment only) |
 | `get_analytics_dashboard`, `get_component_breakdown`, `get_error_breakdown`, `get_llm_usage`, `get_runs_timeseries`, `get_latency_timeseries` | none; Studio Analytics and Metrics |

@@ -58,12 +58,12 @@ Where each kind of output can be read:
 
 | Output | Local `agnt5 dev` | Deployed worker |
 |---|---|---|
-| `ctx.Logger()` | run's logs only (MCP `get_run_logs`, Studio); not printed in the terminal | run's logs |
+| `ctx.Logger()` | run's logs only (`agnt5 inspect logs -r`, MCP `get_run_logs`, Studio); not printed in the terminal | run's logs |
 | `slog.InfoContext(ctx, ...)` via `NewSlogHandler` | terminal and run's logs | run's logs |
 | `log.Printf`, `fmt.Println`, `slog.Info` without context | terminal (`agnt5 dev logs` when detached) | not shown anywhere |
 
-`agnt5 inspect logs -r <runId>` is meant to show the run's logs but currently returns 403;
-`agnt5 logs <deployment-id>` is the platform's lifecycle log for the deployment, not your
+`agnt5 inspect logs -r <runId>` shows the run's logs (CLIs older than `20260930-a31e8d` answer
+403); `agnt5 logs <deployment-id>` is the platform's lifecycle log for the deployment, not your
 worker's output. A deployed worker that crashes shows its last output line in
 `agnt5 deploy debug <deployment-id> --logs`. In the run's logs each keyval becomes a string
 attribute named `field.<key>` (`"n", 3` → `field.n: "3"`).

@@ -26,8 +26,8 @@ response = await lm.generate(
 
 `GenerateResponse` fields: `text`, `usage` (`prompt_tokens`, `completion_tokens`,
 `total_tokens`, `cached_tokens`, `cache_creation_tokens`), `finish_reason`, `tool_calls`
-(list of dicts), `response_id`. `structured_output` / `parsed` / `object` exist but return
-`None` in 0.13.6.
+(list of dicts), `response_id`. `finish_reason`, `structured_output`, `parsed` and `object`
+exist but are `None` in 0.13.6.
 
 `prompt` and `messages` are mutually exclusive with a managed prompt (`prompt=Prompt(id=...)`
 or the deprecated `prompt_ref=`); runtime model overrides from Studio are applied before the

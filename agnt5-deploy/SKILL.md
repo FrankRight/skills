@@ -77,9 +77,11 @@ Smoke-test a deployment by ID with the same `agnt5 run` command as local dev (fl
 agnt5 run my_workflow --type workflow --input '{"message": "..."}' --deployment-id <deployment-id>
 ```
 
-`--env <name>` runs against the environment's live deployment instead. After
-`agnt5 deploy`, `--env preview` currently answers `409 … environment has no active
-deployment` even while preview serves the new deployment; use `--deployment-id`.
+`--env <name>` runs against the deployment that environment routes to, and fails with
+"environment <name> has no active deployment" when it has none. This needs CLI
+`20260930-a31e8d` or later (`agnt5 version update`): older CLIs ignored `--env`, so
+`--env preview` ran on production. With a service key in `AGNT5_API_KEY`, `--env` is not
+applied and the key's own environment is used.
 
 ## Environments — promote, don't rebuild
 

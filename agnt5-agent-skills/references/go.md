@@ -65,6 +65,11 @@ Each load emits a `skill.loaded` event with `skill_name`, `instructions_length`,
 `resources_materialized`. Read it from the trace (`agnt5 inspect trace -r <runId>`) or
 `client.GetEvents(ctx, runID)`.
 
+Under `agnt5 dev` (v0.10.3), a Go agent run that calls `load_skill` never completes: the
+handler finishes, but the run ends in `LEASE_RETRY_EXHAUSTED` about 10 minutes later and
+`agnt5 run` waits silently. Deployed workers are not affected, so try skill-using agents on a
+preview deployment.
+
 Building your own loop instead of `Agent`: `agnt5.RenderSkillsCatalog(skills)`,
 `agnt5.NewLoadSkillTool(skills, sandbox) (agnt5.Tool, error)`, `agnt5.LoadAgentsMD(sources...)`,
 `agnt5.RenderProjectGuidance(text)`.

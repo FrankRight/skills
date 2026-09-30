@@ -35,7 +35,10 @@ work is lost (stash it from tools into `ctx.Memory()` if you need it). Inside a 
 `agent.Run` in `agnt5.Step` so a restart does not re-bill the turn. No `Agent.stream`: emit
 `ctx.Output(result.Response)` after the run if the caller streams; built-in providers do not
 implement `agnt5.StreamingLanguageModel`. Registering the agent as a component:
-`agnt5.RegisterAgent(worker, agent)` (input `{"message": "..."}`).
+`agnt5.RegisterAgent(worker, agent)` (input `{"message": "..."}`). Its output is
+`{agent_name, messages, response, tool_call_details, tool_calls}`: callers and scorers want
+`response`, since `messages` is the whole conversation, system prompt, `AGENTS.md` and skill
+catalog included, and every caller of the component receives it.
 
 ## Custom tools
 
@@ -221,6 +224,10 @@ conv := ctx.Memory().Conversation()                      // session chat history
 err = conv.Append(ctx, agnt5.MemoryMessage{Role: "user", Content: msg})
 history, err := conv.Messages(ctx)                       // []agnt5.MemoryMessage → build agnt5.AgentInput{Messages: ...}
 ```
+
+A tool-using agent fails on the second turn of a session in v0.10.3 (`agnt5: model provider
+returned HTTP 400`): the replayed history keeps the assistant's tool-call message but not the
+tool results. Until that is fixed, don't continue a session with an agent that has tools.
 
 Session and user namespaces come from the run's `session_id`/`user_id` metadata
 (`X-Session-ID`/`X-User-ID`: `client.Session(id).WithUser(uid)`, `agnt5.WithRunSessionID`).

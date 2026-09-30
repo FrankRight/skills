@@ -214,10 +214,9 @@ sub = client.submit("onboarding_workflow", {"user_email": "ada@example.com"},
 `idempotency_key=` from a stable business id so retries from your app don't start duplicate
 runs. `run` and `stream_events` (not `submit`) take `session_id=` / `user_id=` to give the run
 session and user scope (`agnt5-workflows`). From a shell, target a deployment explicitly:
-`agnt5 run <name> --type workflow --deployment-id <deployment-id> --input '{...}'` (see
-`agnt5-project-init`; `agnt5 run --env preview` answers 409 "environment has no active
-deployment"). Full client API, streaming and answering a paused
-run: `agnt5-client`.
+`agnt5 run <name> --type workflow --deployment-id <deployment-id> --input '{...}'`, or
+`--env preview` on CLI `20260930-a31e8d` or later (see `agnt5-project-init`). Full client
+API, streaming and answering a paused run: `agnt5-client`.
 
 ## Source
 

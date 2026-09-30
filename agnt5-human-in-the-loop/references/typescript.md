@@ -41,9 +41,10 @@ const topics = selections(await ctx.waitForUser('Which topics?', {
 ```
 
 Answers submitted through the resume API arrive as strings: multiselect is a JSON-encoded
-array (`'["a","c"]'`), a skipped question arrives as the string `"null"` (not only `null`),
-approval/select return the id string that was sent. The product docs' comma-separated
-multiselect format is not what the platform sends. Normalise once:
+array (`'["a","c"]'`), approval/select return the id string that was sent. A skip sent as
+`"__skipped__"` arrives as `null`; a JSON `null` sent instead arrives as the string `"null"`.
+The product docs' comma-separated multiselect format is not what the platform sends.
+Normalise once:
 
 ```typescript
 function skipped(raw: string | null): boolean {
@@ -225,7 +226,7 @@ then throws `RunError`; check `res.status === 'paused'` before waiting. Cancel w
 | LLM call / email repeats after the user answers | side effect not in `ctx.step` | `ctx.step(name, ..., { key })` before the pause |
 | Run completes with a fallback instead of pausing | `try/catch` swallowed `WaitingForUserInputError` | rethrow with `isWaitingForUserInput(err)` |
 | `topics.split(',')` yields `['["a"', '"c"]']` | multiselect answer is a JSON string | `JSON.parse` first (`selections()` above) |
-| `note === null` never true after Skip | skip arrives as the string `"null"` | treat `null`, `'null'`, `''` as skipped |
+| `note === null` never true after Skip | the skip was sent as JSON `null`, which arrives as the string `"null"` | send `"__skipped__"`; or treat `'null'` as skipped too |
 | `new AskUserTool(ctx)` does not type-check | constructor takes `ContextImpl` | `ctx as ContextImpl` |
 | Approval never times out | no timeout support | add an operator-side deadline outside the run |
 | `waitForSignal` throws | unsupported on this runtime | webhook trigger or polling step |

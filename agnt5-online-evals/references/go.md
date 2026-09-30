@@ -15,7 +15,11 @@ var citesOrderID = agnt5.ScorerConfig{
     Handler: func(_ context.Context, req agnt5.ScorerRequest) (agnt5.ScorerResult, error) {
         input, _ := req.Input.(map[string]any) // Input and Output are `any`
         orderID, _ := input["order_id"].(string)
-        output, _ := json.Marshal(req.Output)
+        reply := req.Output
+        if m, ok := req.Output.(map[string]any); ok && m["response"] != nil {
+            reply = m["response"] // an agent's reply; its messages include the system prompt
+        }
+        output, _ := json.Marshal(reply)
         if orderID != "" && strings.Contains(string(output), orderID) {
             return agnt5.PassingScorerResult("Order ID " + orderID + " found"), nil
         }

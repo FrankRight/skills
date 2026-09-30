@@ -6,15 +6,12 @@ project.
 
 ## 1. Create or link the project
 
-There is no blank TypeScript scaffold: `agnt5 create --language typescript` and
-`agnt5 init --language typescript` fail with "scaffolding for language … is not supported
-yet". Two paths work:
+There is no blank TypeScript scaffold; `--language typescript` starts from the quickstart
+template. Two paths work:
 
 ```bash
 # A. Start from the quickstart template (agnt5-ai-templates covers the others)
-agnt5 create my-project --template typescript/quickstart --local
-# edit agnt5.yaml: name: my-project   (otherwise the project registers as "quickstart")
-cd my-project && agnt5 init --new --name my-project --workspace <ws> -y
+agnt5 create my-project --language typescript     # = --template typescript/quickstart, named my-project
 
 # B. Write package.json, tsconfig.json, app.ts, agnt5.yaml yourself (layout in
 #    agnt5-ai-templates/references/typescript.md), then link the directory
@@ -55,7 +52,7 @@ is imported, so `app.ts` must import every module (`import './src/functions.js';
 
 ```bash
 agnt5 dev                # runs agnt5.yaml worker.command, hot reload on .ts .js .env
-agnt5 dev -d             # detached; agnt5 dev status | logs | stop
+agnt5 dev -d             # background, hot reload too; agnt5 dev status | logs | stop
 agnt5 dev -v             # verbose; AGNT5_DEBUG=1 raises the SDK log level to DEBUG
 ```
 
@@ -79,9 +76,8 @@ Same `agnt5 run` / Studio flow. TypeScript-specific notes:
 
 - Workflow and function inputs are one JSON object matching the handler's second parameter
   (`--input '{"userEmail": "..."}'`).
-- `agnt5 run my_function` prints the first failed attempt and exits 1 while the platform is
-  still retrying a function with `.retry()`; confirm with `agnt5 inspect runs describe <runId>`
-  once the run has finished.
+- `agnt5 run my_function` waits through a function's `.retry()` attempts and prints the final
+  result, or the last attempt's error.
 - Studio shows no input form unless the component declares `inputSchema` (types are erased).
 
 ## Common errors

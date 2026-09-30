@@ -12,14 +12,12 @@ install/auth (step 0 of the SKILL.md) is language-independent.
 
 ## 1. Create or link (Go)
 
-There is no blank Go scaffold: `agnt5 create --language go` and `agnt5 init --language go`
-fail with "scaffolding for language … is not supported yet". Two paths work:
+There is no blank Go scaffold; `--language go` starts from the quickstart template. Two paths
+work:
 
 ```bash
 # A. Start from the quickstart template (agnt5-ai-templates covers the others)
-agnt5 create my-project --template go/quickstart --local
-# edit agnt5.yaml: name: my-project   (otherwise the project registers as "quickstart")
-cd my-project && agnt5 init --new --name my-project --workspace <ws> -y
+agnt5 create my-project --language go     # = --template go/quickstart, named my-project
 
 # B. Write main.go, go.mod, agnt5.yaml yourself (layout below), then link the directory
 agnt5 init --new --name my-project --workspace <ws> -y
@@ -68,7 +66,7 @@ implicitly; every template does `APIKey: os.Getenv("OPENAI_API_KEY")` explicitly
 
 ```bash
 agnt5 dev                # runs worker.command ("go run ."), hot reload on .go/.env changes
-agnt5 dev -d             # detached; agnt5 dev status | logs | stop
+agnt5 dev -d             # background, hot reload too; agnt5 dev status | logs | stop
 agnt5 dev -v
 ```
 

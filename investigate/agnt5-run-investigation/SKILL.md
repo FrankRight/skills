@@ -21,14 +21,14 @@ investigation shows the problem is probably not isolated, say so and suggest run
 This skill uses the AGNT5 MCP tools. The CLI ships the server: after `agnt5 auth login`,
 register `agnt5 mcp` with your MCP client (Claude Code: `claude mcp add agnt5 -- agnt5 mcp`).
 Without MCP, the `agnt5` CLI covers part of the same ground from inside the project's linked
-directory:
+directory (CLI `20260930-a31e8d` or later; run `agnt5 version update` first):
 
 | MCP tool | CLI equivalent |
 |---|---|
-| `list_runs` | `agnt5 inspect runs ls` (`--component`, `--status`, `--since`) |
+| `list_runs` | `agnt5 inspect runs ls` (`--component`, `--status`, `--since`); the CLI also lists runs that have not ended, `list_runs` does not |
 | `get_run_summary` | `agnt5 inspect runs describe <run-id>` (prints the trace ID) |
-| `get_trace_excerpt` / `get_trace` | `agnt5 inspect trace -r <run-id>` (`--verbose` for span attributes, `-o json`); it takes the run ID and only finds the project's 200 most recent runs |
-| `get_run_logs` | none that works: `agnt5 inspect logs -r <run-id>` currently returns 403, so use the MCP tool or the run page in Studio |
+| `get_trace_excerpt` / `get_trace` | `agnt5 inspect trace -r <run-id>` (`--verbose` for span attributes, `-o json`); it takes the run ID, looks in the project's 200 most recent run summaries, then asks the gateway, which also has runs that have not ended |
+| `get_run_logs` | `agnt5 inspect logs -r <run-id>` (`--severity`, `--tail`, `--follow`) |
 | `list_deployments` | `agnt5 deployment list` |
 | `get_llm_usage`, `get_latency_timeseries`, `get_runs_timeseries` | none; Studio Analytics |
 
@@ -86,8 +86,9 @@ Two things to check while reading spans:
 - **Does the error contradict the input?** If a step says "X is missing" but its
   `input.data` contains X, or says "invalid type" for a value that looks valid, that
   mismatch is itself a finding — the check is reading the wrong key or type.
-- **Empty trace?** If the excerpt returns `total_spans: 0`, the logs are your only source.
-  Say so in the report.
+- **Empty trace?** Spans can take about a minute to arrive after a run ends, so retry a
+  just-finished run first. If the excerpt still returns `total_spans: 0`, the logs are your
+  only source. Say so in the report.
 - **TypeScript workers record no spans at all** (`@agnt5/sdk` up to 0.10.5): every
   TypeScript run, failed or successful, has `total_spans: 0`. Treat that as
   expected, not as an anomaly of the project, and work from `get_run_logs` and the run's
@@ -95,6 +96,9 @@ Two things to check while reading spans:
   with `error_type: EXECUTION_ERROR`, so read the real error name and message
   from the logs, not from the run summary. Tell whether a worker is TypeScript from the
   deployment's language or a `tsx`/`node` start command in its logs.
+- **Summary fields that mislead:** `step_count` is 0 for TypeScript and Go runs and for Python
+  workflows, and a failed Go workflow's summary has no error type or message. Count steps and
+  read the error from the trace, the run's events and the logs.
 - **Observed spans** (`capture_mode=observed`, from automatic OpenAI / OpenAI Agents SDK /
   Google ADK capture) are best-effort: a missing observed span is not proof the call didn't
   happen, and with `AGNT5_CAPTURE_CONTENT_MODE=metadata-only` prompts and responses are
