@@ -111,9 +111,10 @@ For platform-tracked gates keep using `agnt5 experiments run ... --wait --fail-o
 ## Datasets and experiments from the SDK
 
 There is no dataset/experiment API on the TypeScript `Client` (no `datasets`, `experiments`
-or `reports` methods). Use the CLI commands in the SKILL.md, the REST endpoints, or the AGNT5
-MCP tools from `agnt5 mcp` (`create_eval_dataset`, `add_run_to_dataset_draft`, `run_experiment`,
-...; setup in the SKILL.md).
+or `reports` methods). Use the CLI commands in the SKILL.md or the REST endpoints. The AGNT5
+MCP tools from `agnt5 mcp` run and read experiments (`run_experiment`,
+`get_experiment_run_summary`, ...) but don't create datasets or experiments (setup in the
+SKILL.md).
 `client.getEvents(runId)` returns the journal events of a run (`{ events: [{ eventType, data,
 sequence, correlationId }], runId }`) if you need to build dataset `events` yourself.
 

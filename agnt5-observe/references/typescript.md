@@ -107,7 +107,7 @@ outside a component context are not journaled.
 
 ## Metrics and machine-readable output
 
-Identical to the SKILL.md (Studio Analytics/Metrics, MCP tools, `--output json`).
+Identical to the SKILL.md (Studio Analytics/Metrics, `--output json`).
 
 ## TypeScript pitfalls
 

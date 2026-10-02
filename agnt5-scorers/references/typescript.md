@@ -81,10 +81,10 @@ export const citesOrderId = scorer('cites_order_id', 'Reply must cite the order 
 - Calling `scorer(...)` registers the handler in `ScorerRegistry`; the worker publishes it as a
   `scorer` component on `worker.run()`. Import the module from `app.ts`
   (`import './src/scorers.js'`) or it never registers.
-- Deploying does not create a project scorer. Get a scorer ID with MCP `create_scorer`
-  (`type: "deployed"`, `deployment_id`, `component_name: "cites_order_id"`) and
-  `publish_scorer_version`, then `agnt5 experiments create ... --scorer-id <scorer-id>` (steps in
-  the SKILL.md). A component ID is accepted at create and fails at `experiments run` with 404.
+- Deploying does not create a project scorer. Get a scorer ID over REST (a `deployed` scorer
+  with `deployment_id` and `component_name: "cites_order_id"`, then publish a version), then
+  `agnt5 experiments create ... --scorer-id <scorer-id>` (steps in the SKILL.md). A component ID
+  is accepted at create and fails at `experiments run` with 404.
 
 Test locally without deploying:
 

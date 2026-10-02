@@ -37,11 +37,12 @@ with your MCP client, e.g. Claude Code:
 claude mcp add agnt5 -- agnt5 mcp
 ```
 
-`agnt5 mcp --services runs,traces,analytics` limits the tools to those categories (others:
-projects, deployments, workers, evals, experiments, scorers, prompts, identity). The tools
-take IDs rather than a project directory: `list_runs`, `get_run_summary`, `get_run_logs`,
-`get_trace_excerpt`, `get_trace`, `get_analytics_dashboard`, `get_error_breakdown`,
-`get_llm_usage`, and more.
+Register it without `--services`: `get_run_events` and `get_run_input_output` are in no
+category, so any `--services` list hides them. `get_run_events` needs CLI `20261002-b0b8c8` or
+later. The tools take IDs rather than a project directory: `list_runs`, `get_run_summary`,
+`get_run_events` (a run's steps, LLM and tool calls, attempts and errors, in order),
+`get_run_logs`, `get_run_input_output`, `list_deployments`, and more. There are no MCP tools
+for traces or metrics: use `agnt5 inspect trace` and Studio.
 
 ## Runs
 
@@ -74,8 +75,10 @@ commands (`agnt5 inspect logs -r ...`, `agnt5 inspect trace -r ...`).
 Run summaries are written when a run ends. The CLI also reads queued, running and paused runs
 from the gateway: `agnt5 inspect runs ls` lists them (`--status paused`, `--status running`),
 and `describe` and `trace` work on them; `describe` notes that step, retry and LLM totals
-arrive once the run ends. The MCP `list_runs` / `get_run_summary` tools, and CLIs older than
-`20260930-a31e8d`, only show a run after it ends (`describe` answers 404 "No summary").
+arrive once the run ends. The MCP `list_runs` lists them too, on its first page;
+`get_run_summary` reads them without the totals, and `get_run_events` returns their events so
+far. CLIs older than `20260930-a31e8d` only show a run after it ends (`describe` answers 404
+"No summary").
 `agnt5 run` returns at the run's first pause with `status: paused` and the run ID; for a
 function or workflow it also prints the run ID when it stops waiting.
 
@@ -119,8 +122,8 @@ In Studio: open the run → **Trace** tab — interactive tree, updates live whi
 
 `agnt5 inspect trace -r` looks the run up among the project's 200 most recent run summaries,
 then on the gateway, which also has runs that have not ended. If it still reports the run as not
-found, take the trace ID from `agnt5 inspect runs describe` and use the MCP
-`get_trace_excerpt` / `get_trace` tools.
+found, read the run's events with the MCP tool `get_run_events`, or open its **Trace** tab in
+Studio.
 
 ## Logs
 
@@ -172,12 +175,10 @@ runtime_context, attributes={...})` is the underlying context manager; passing
 trace. `get_logger(name)` returns a logger wired to the AGNT5 handlers; `set_log_level("DEBUG")`
 or `AGNT5_DEBUG=1` (set before import) turns on SDK debug output.
 
-## Metrics (Studio or AGNT5 MCP)
+## Metrics (Studio)
 
-There is no CLI command for metrics. With `agnt5 mcp` registered (above), use
-`get_analytics_dashboard`, `get_component_breakdown`, `get_error_breakdown`, `get_llm_usage`,
-`get_runs_timeseries`, `get_latency_timeseries` (each takes `project_id`, optional
-`since`/`until` in RFC3339). In Studio:
+There is no CLI command or MCP tool for metrics. Per run, `get_run_summary` has the duration
+and LLM cost, and `get_run_events` the tokens and cost of each LLM call. In Studio:
 
 - **Analytics** — summary for a time window: total executions, success rate, P95 latency,
   total LLM cost; charts for executions/latency over time, LLM usage by model, top errors.

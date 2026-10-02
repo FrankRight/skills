@@ -61,14 +61,14 @@ Other CSV flags: `--metadata-column`, `--events-column`, `--tags-column`,
 `--source-run-id-column`, `--source-ref(-column)`, `--delimiter`, `--no-header` (columns by
 zero-based index). Or Studio → project → **Evaluate → Datasets**.
 
-From an MCP client, the same operations are the tools `create_eval_dataset`,
-`add_run_to_dataset_draft`, `add_manual_dataset_example`, `import_dataset_csv`,
-`preview_dataset_dedup` / `apply_dataset_dedup`, `publish_dataset_version`, `create_experiment`,
-`run_experiment`, `get_experiment_run_summary`, `list_experiment_failures` and
-`create_regression_dataset_from_run`. They come from `agnt5 mcp`, an MCP server over stdio that
-uses your CLI login; register it with your client, for example
-`claude mcp add agnt5 -- agnt5 mcp` in Claude Code. `--services evals,experiments,scorers` narrows
-the tool list but drops `create_regression_dataset_from_run` and `compare_experiment_runs`.
+Creating and editing datasets and experiments is CLI or Studio only. From an MCP client you can
+read datasets (`list_eval_datasets`, `get_eval_dataset`, `get_dataset_item_payload`) and run and
+read experiments (`list_experiments`, `get_experiment`, `run_experiment`,
+`get_experiment_run_summary`, `list_experiment_failures`, `compare_experiment_runs`,
+`cancel_experiment_run`). They come from `agnt5 mcp`, an MCP server over stdio that uses your
+CLI login; register it with your client, for example `claude mcp add agnt5 -- agnt5 mcp` in
+Claude Code. `--services evals,experiments` narrows the tool list but drops
+`compare_experiment_runs`.
 
 ### Deduplicate and publish
 
@@ -118,9 +118,9 @@ Required for create: `--name`, `--dataset-id`, `--dataset-version-id`, a target
   config, e.g. `--builtin-scorer '{"name":"contains","config":{"pattern":"refund"}}'`; create
   rejects the bare name. The full table is in `agnt5-scorers`.
 - `--scorer-id` takes a **project scorer** ID. Deploying a custom `@scorer` does not create one:
-  create it with MCP `create_scorer` (`type: "deployed"`, `deployment_id`, `component_name`) and
-  `publish_scorer_version` (`agnt5-scorers`). A component ID is accepted here and then fails at
-  `experiments run` with 404.
+  create it over REST (a `deployed` scorer with `deployment_id` and `component_name`, then
+  publish a version; steps in `agnt5-scorers`). A component ID is accepted here and then fails
+  at `experiments run` with 404.
 
 ## 3. Inspect and compare
 
@@ -167,7 +167,7 @@ agnt5 experiments runs regression-dataset <run-id> --name order-bugs --run-item-
 ```
 
 Builds a dataset from the failed items, creates a regression experiment over it, and (with
-`--start-run`) kicks off the first rerun immediately. MCP: `create_regression_dataset_from_run`.
+`--start-run`) kicks off the first rerun immediately.
 Rerun that experiment against each fix candidate (`--deployment-id`) until the gate passes.
 
 A failing **production** run is not an experiment run: add it to a dataset instead, with the

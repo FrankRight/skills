@@ -1,6 +1,6 @@
 ---
 name: agnt5-scorers
-description: Score AGNT5 component outputs - pick built-in deterministic checks (exact_match, json_schema, tool_called, step_efficiency, ...) with the config each one requires, built-in LLM-as-judge presets (correctness, faithfulness, goal_success, agent_judge) and their provider/model naming, or write and deploy a custom @scorer (ScorerContext/ScorerRequest) and register it as a project scorer (MCP create_scorer + publish_scorer_version) to get the scorer ID experiments need; trace assertions for glassbox checks; inspecting scores. Use when defining what "correct" means for an experiment or online eval, writing a custom scorer, fixing a config_error from a built-in scorer, or reading scores/evidence for a run.
+description: Score AGNT5 component outputs - pick built-in deterministic checks (exact_match, json_schema, tool_called, step_efficiency, ...) with the config each one requires, built-in LLM-as-judge presets (correctness, faithfulness, goal_success, agent_judge) and their provider/model naming, or write and deploy a custom @scorer (ScorerContext/ScorerRequest) and register it as a project scorer over REST to get the scorer ID experiments need; trace assertions for glassbox checks; inspecting scores. Use when defining what "correct" means for an experiment or online eval, writing a custom scorer, fixing a config_error from a built-in scorer, or reading scores/evidence for a run.
 ---
 
 # AGNT5 Scorers
@@ -174,19 +174,31 @@ Two `ScorerResult` types exist: `agnt5.ScorerResult` (Python dataclass, what a d
 ### Get a scorer ID for experiments
 
 Deploying does not create a project scorer, so a custom scorer has no scorer ID yet. Create one
-with the AGNT5 MCP tools, then pass its `id` to `--scorer-id`:
+over REST, then pass its `id` to `--scorer-id`. Neither the CLI nor the MCP server can create
+one, and Studio creates LLM judges only. These are control-plane calls: send a **personal API
+key** (Studio → Settings → Profile → API keys) as `X-API-KEY`; service keys get 401.
 
-1. `create_scorer` with `type: "deployed"`, `deployment_id` (the deployment that registered the
-   scorer), `component_name: "cites_order_id"`, and `name`.
-2. `publish_scorer_version` with the returned scorer ID.
-3. `agnt5 experiments create ... --scorer-id <scorer-id>` (repeatable).
+```bash
+export AGNT5_PERSONAL_API_KEY=<personal-api-key>
+API=https://api.agnt5.com/api/v1/projects/<project-id>   # `agnt5 info` shows the project ID
 
-The component ID from `agnt5 components` is not a scorer ID: `experiments create` accepts it and
-`experiments run` then fails with 404. An online eval also needs input requirements on the first
-published version, which only the REST API can set (`agnt5-online-evals`).
+# 1. A scorer that points at the deployment that registered it
+SCORER_ID=$(curl -s -X POST "$API/scorers" -H "X-API-KEY: $AGNT5_PERSONAL_API_KEY" -H "Content-Type: application/json" \
+  -d '{"name": "cites_order_id", "type": "deployed", "deployment_id": "<deployment-id>", "component_name": "cites_order_id"}' \
+  | jq -r .data.id)
 
-The MCP tools come from `agnt5 mcp`, an MCP server over stdio that uses your CLI login. Register it
-with your MCP client, for example `claude mcp add agnt5 -- agnt5 mcp` in Claude Code.
+# 2. Publish its first version
+curl -s -X POST "$API/scorers/$SCORER_ID/versions" -H "X-API-KEY: $AGNT5_PERSONAL_API_KEY" \
+  -H "Content-Type: application/json" -d '{}'
+
+# 3. Use it (repeatable)
+agnt5 experiments create ... --scorer-id "$SCORER_ID"
+```
+
+Use the registered scorer name for both `name` and `component_name`. The component ID from
+`agnt5 components` is not a scorer ID: `experiments create` accepts it and `experiments run`
+then fails with 404. An online eval also needs input requirements on the first published
+version (`agnt5-online-evals`).
 
 ## Trace assertions (glassbox testing)
 

@@ -100,29 +100,29 @@ start). The environment keeps serving its current deployment until the new one i
 then traffic switches and the old one drains. Nothing is rebuilt by the CLI, so the code you
 verified is the code that runs, but the new workers read the current secrets.
 
-**Rollback** (no CLI command yet) — Studio → Deployments → environment tab → Rollback, the
-MCP tool `rollback_deployment` (`environment_id`, optional `deployment_id`, `confirm: true`),
-or `POST https://api.agnt5.com/api/v1/deployments/rollback` with
+**Rollback** (no CLI command or MCP tool) — Studio → Deployments → environment tab →
+Rollback, or `POST https://api.agnt5.com/api/v1/deployments/rollback` with
 `{"environment_id": "...", "deployment_id": "..."}` (omit `deployment_id` for the one
 before). Like promotion, it creates a new deployment from the earlier deployment's code.
 
 > Rollback changes which code serves traffic, not your data or secrets — if the bad deploy
 > also changed a secret or external state, revert those separately.
 
-## Scale / stop / resume (Studio, MCP, or API)
+## Scale / stop / resume (Studio or API)
 
 Scale: Studio Scale action, or `POST https://api.agnt5.com/api/v1/deployments/<id>/scale-up`
-(`scale-down`). Stop: Studio Terminate (image/record persist). Resume: Studio Start.
+(`scale-down`). Stop: Studio Terminate (image/record persist). Resume: Studio Start, or the
+MCP tool `start_deployment`.
 
 Control-plane REST calls (`https://api.agnt5.com/api/v1/...`) need a **personal API key**
 (Studio → Settings → Profile → API keys) sent as `X-API-KEY`; service keys are rejected
 there with 401.
 
 From an MCP client, register the CLI's built-in server — it uses your `agnt5 auth login`
-session (Claude Code: `claude mcp add agnt5 -- agnt5 mcp`) — then use `scale_deployment`,
-`rollback_deployment`, `terminate_deployment`, `start_deployment`, `promote_deployment`,
-`list_promotion_history`. Run it without `--services`: the promotion and rollback tools are in
-no category, so any `--services` list hides them.
+session (Claude Code: `claude mcp add agnt5 -- agnt5 mcp`). It can restart a stopped deployment
+(`start_deployment`) and show what each environment served (`list_promotion_history`), but not
+promote, scale, stop or roll back: use the CLI, Studio or the API above. Run it without
+`--services`: `list_promotion_history` is in no category, so any `--services` list hides it.
 
 ## `agnt5.yaml` and what gets bundled
 

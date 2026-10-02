@@ -104,8 +104,8 @@ matched triggers and run IDs.
 
 ## Set up an integration (once per source)
 
-Webhook integrations are created in Studio only: the CLI has no integrations command, and the
-MCP server (`agnt5 mcp`) can list them (`list_project_integrations`) but not create them.
+Webhook integrations are created and listed in Studio only: neither the CLI nor the MCP server
+(`agnt5 mcp`) has an integrations command or tool.
 
 1. **Studio → Integrations → New**, pick the source.
 2. Pick the **environment** whose deployment should receive triggers.

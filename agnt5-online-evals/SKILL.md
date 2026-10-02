@@ -78,11 +78,9 @@ VERSION_ID=$(curl -s -X POST "$API/scorers/$SCORER_ID/versions" -H "X-API-KEY: $
 ```
 
 - Use the registered scorer name for both `name` and `component_name`.
-- Declare the requirements on the **first** publish. The MCP `publish_scorer_version` tool has no
-  `input_requirements` field. Publishing again returns `Scorer draft has no unpublished changes`
-  until the scorer's draft changes. Editing only the description does not change the draft.
-- MCP `create_scorer` (`type: "deployed"`, `deployment_id`, `component_name`) also works for the
-  first call (`agnt5 mcp`, see `agnt5-scorers`).
+- Declare the requirements on the **first** publish. Publishing again returns `Scorer draft has
+  no unpublished changes` until the scorer's draft changes. Editing only the description does
+  not change the draft.
 
 For `json_valid`, seed the built-in scorers once, then take its published version ID:
 

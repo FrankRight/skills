@@ -149,8 +149,8 @@ runs many inputs as one batch (`get_batch_status`, `cancel_batch`). `client.eval
 
 A workflow waiting on `wait_for_user` reports `paused`, and so does one in a durable sleep or
 a serverless workflow waiting on a signal. Keep the run ID from `run` / `submit`. To find one
-you lost: `agnt5 inspect runs ls --status paused` (CLI `20260930-a31e8d` or later; the MCP
-`list_runs` tool does not list unfinished runs yet), or the gateway's
+you lost: `agnt5 inspect runs ls --status paused` (CLI `20260930-a31e8d` or later), the MCP
+`list_runs` tool with `status: paused` (first page only), or the gateway's
 `GET /v1/runs?component_name=<name>` (filters: `status`, `deployment_id`, `limit`). Follow one
 run with `GET /v1/runs/{run_id}` (status) and `GET /v1/runs/{run_id}/events`.
 

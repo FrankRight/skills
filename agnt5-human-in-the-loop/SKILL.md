@@ -140,8 +140,8 @@ and during a durable `ctx.sleep()`. `awaiting_user_input` never appears. `agnt5 
 that `RunResponse` has `is_error == True` and `raise_for_status()` raises
 `RunError("Run failed with status: paused")`, so test `res.status == RunStatus.PAUSED` first.
 Keep the ID. To find a paused run you lost, use `agnt5 inspect runs ls --status paused` (CLI
-`20260930-a31e8d` or later; MCP `list_runs` does not list unfinished runs yet) or the gateway's
-run list below. Follow the run on the gateway:
+`20260930-a31e8d` or later), MCP `list_runs` with `status: paused` (first page only), or the
+gateway's run list below. Follow the run on the gateway:
 
 | Call | Use |
 |---|---|

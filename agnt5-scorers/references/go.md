@@ -49,8 +49,8 @@ must(agnt5.RegisterScorer(worker, citesOrderID))
 - `DependsOn: []string{"other_scorer"}` + read `req.PeerScores` (one map per earlier result,
   with `ScorerResult`'s JSON keys — exact keys were not verified, log one first).
 - The scorer deploys with the worker like any component (type `scorer`), but deploying does not
-  create a project scorer. Get a scorer ID with MCP `create_scorer` (`type: "deployed"`,
-  `deployment_id`, `component_name: "cites_order_id"`) and `publish_scorer_version`, then
+  create a project scorer. Get a scorer ID over REST (a `deployed` scorer with `deployment_id`
+  and `component_name: "cites_order_id"`, then publish a version), then
   `agnt5 experiments create ... --scorer-id <scorer-id>` (steps in the SKILL.md). A component ID
   is accepted at create and fails at `experiments run` with 404.
 

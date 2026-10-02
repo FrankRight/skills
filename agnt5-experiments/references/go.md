@@ -89,8 +89,8 @@ codes, regression datasets, rescoring) is unchanged. Go-specific timing:
 2. Wait for `agnt5 deployment status --watch` to show Ready before `agnt5 experiments run` or
    `agnt5 run --env`, otherwise items fail with connection errors rather than bad scores.
 3. Custom scorers (`RegisterScorer`) ship in the same build. Once the deploy is Ready, create a
-   project scorer for that deployment ID (MCP `create_scorer` with `type: "deployed"`, then
-   `publish_scorer_version`) and pass its ID to `--scorer-id`; see `agnt5-scorers`. Built-in
+   project scorer for that deployment ID over REST (a `deployed` scorer, then publish a
+   version) and pass its ID to `--scorer-id`; see `agnt5-scorers`. Built-in
    judge scorers run in the Go worker and need the provider key set as a secret
    (`agnt5 secrets set --name OPENAI_API_KEY --type api_key`).
 4. Trace-level scorers need `events` on dataset items — capture them with
@@ -98,7 +98,7 @@ codes, regression datasets, rescoring) is unchanged. Go-specific timing:
 
 ## Not available in Go
 
-Dataset/experiment management from the SDK (CLI, or the MCP tools from `agnt5 mcp`), item input as bare dicts with
+Dataset/experiment management from the SDK (use the CLI), item input as bare dicts with
 `input`/`expected` keys (build `BatchEvalItem`s), `AsyncClient` (the Go client is already
 context-based).
 
